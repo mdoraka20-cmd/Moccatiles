@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="tileGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="tileGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background with rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Desktop App Window Outline / Surface -->
+  <g filter="url(#shadow)">
+    <rect x="56" y="56" width="400" height="400" rx="44" fill="#ffffff"/>
+    
+    <!-- Window Header -->
+    <path d="M 56 100 Q 56 56 100 56 L 412 56 Q 456 56 456 100 L 456 126 L 56 126 Z" fill="#1e293b"/>
+    <circle cx="86" cy="91" r="7" fill="#ef4444"/>
+    <circle cx="108" cy="91" r="7" fill="#f59e0b"/>
+    <circle cx="130" cy="91" r="7" fill="#10b981"/>
+    <rect x="160" y="81" width="192" height="20" rx="6" fill="#334155"/>
+
+    <!-- 4 Tiles Grid (Billing & Inventory) -->
+    <rect x="96" y="156" width="144" height="110" rx="14" fill="url(#tileGrad1)"/>
+    <!-- Grid pattern inside tile 1 -->
+    <line x1="96" y1="211" x2="240" y2="211" stroke="#ffffff" stroke-width="2" stroke-opacity="0.4"/>
+    <line x1="168" y1="156" x2="168" y2="266" stroke="#ffffff" stroke-width="2" stroke-opacity="0.4"/>
+
+    <rect x="272" y="156" width="144" height="110" rx="14" fill="url(#tileGrad2)"/>
+    <line x1="272" y1="211" x2="416" y2="211" stroke="#ffffff" stroke-width="2" stroke-opacity="0.4"/>
+    <line x1="344" y1="156" x2="344" y2="266" stroke="#ffffff" stroke-width="2" stroke-opacity="0.4"/>
+
+    <!-- Bottom Invoice Paper with checkmark and Taka symbol -->
+    <rect x="96" y="294" width="320" height="130" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3"/>
+    
+    <!-- Receipt Lines -->
+    <line x1="126" y1="330" x2="280" y2="330" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
+    <line x1="126" y1="358" x2="240" y2="358" stroke="#64748b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="126" y1="386" x2="210" y2="386" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
+
+    <!-- Currency / PAID Badge -->
+    <rect x="306" y="324" width="86" height="74" rx="12" fill="url(#cardGrad)"/>
+    <text x="349" y="369" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle">৳</text>
+  </g>
+</svg>

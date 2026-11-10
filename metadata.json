@@ -1,0 +1,6 @@
+{
+  "name": "inventory billing এপ্স",
+  "description": "টাইলস ও সাধারণ পণ্য ইনভেন্টরি এবং বিলিং সফটওয়্যার (Invoice, Challan, Customer, Product, Pay Receipt, Reports) - VB.NET / WinForms স্টাইলে সমৃদ্ধ ডেস্কটপ ওয়েব অ্যাপ্লিকেশন।",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

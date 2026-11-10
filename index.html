@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>inventory billing এপ্স - Tiles & Inventory Billing</title>
+    <meta name="description" content="টাইলস ও সাধারণ পণ্য ইনভেন্টরি এবং বিলিং সফটওয়্যার (Invoice, Challan, Customer, Product, Pay Receipt, Reports) - VB.NET / WinForms স্টাইলে সমৃদ্ধ ডেস্কটপ ওয়েব অ্যাপ্লিকেশন।" />
+    <meta property="og:title" content="inventory billing এপ্স - Tiles & Inventory Billing" />
+    <meta property="og:description" content="টাইলস ও সাধারণ পণ্য ইনভেন্টরি এবং বিলিং সফটওয়্যার (Invoice, Challan, Customer, Product, Pay Receipt, Reports) - VB.NET / WinForms স্টাইলে সমৃদ্ধ ডেস্কটপ ওয়েব অ্যাপ্লিকেশন।" />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Clear any cached service workers and caches to ensure latest updates are immediately visible
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (let registration of registrations) {
+            registration.unregister();
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (let name of names) {
+            caches.delete(name);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
+
