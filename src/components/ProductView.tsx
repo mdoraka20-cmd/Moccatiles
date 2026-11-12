@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Product } from '../types';
 import { StorageService } from '../services/storage';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatMoney, formatQty, formatQty4, parseNum } from '../utils/numberWords';
 import {
   Package,
@@ -77,6 +78,16 @@ export const ProductView: React.FC<ProductViewProps> = ({
   const [filterVendor, setFilterVendor] = useState<string>('all');
   const [filterGrade, setFilterGrade] = useState<string>('all');
 
+  // Keep categories and vendors in sync with Storage / Firebase live changes
+  useEffect(() => {
+    const handleStorage = () => {
+      setCategories(StorageService.getCategories());
+      setVendors(StorageService.getVendors());
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   const showCatMsg = (msg: string) => {
     setCatFeedbackMsg(msg);
     setTimeout(() => setCatFeedbackMsg(''), 4000);
@@ -95,6 +106,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     }
     const updated = StorageService.addVendor(target);
     setVendors(updated);
+    FirestoreSyncService.syncMetadataLists(undefined, updated).catch(console.error);
     setVendor(target);
     setNewVendorInput('');
     showVendorMsg(`ভেন্ডর "${target}" সফলভাবে যোগ করা হয়েছে!`);
@@ -112,6 +124,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     }
     const { updatedVendors, affectedCount } = StorageService.renameVendor(oldName, trimmedNew);
     setVendors(updatedVendors);
+    FirestoreSyncService.syncMetadataLists(undefined, updatedVendors).catch(console.error);
     if (vendor.toLowerCase() === oldName.toLowerCase()) {
       setVendor(trimmedNew);
     }
@@ -133,6 +146,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     const executeDelete = () => {
       const updated = StorageService.deleteVendor(vendorName);
       setVendors(updated);
+      FirestoreSyncService.syncMetadataLists(undefined, updated).catch(console.error);
       if (vendor.toLowerCase() === vendorName.toLowerCase()) {
         setVendor('');
       }
@@ -154,6 +168,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     }
     const updated = StorageService.addCategory(target);
     setCategories(updated);
+    FirestoreSyncService.syncMetadataLists(updated).catch(console.error);
     setCategory(target);
     setNewCategoryInput('');
     showCatMsg(`ক্যাটাগরি "${target}" সফলভাবে যোগ করা হয়েছে!`);
@@ -171,6 +186,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     }
     const { updatedCategories, affectedCount } = StorageService.renameCategory(oldName, trimmedNew);
     setCategories(updatedCategories);
+    FirestoreSyncService.syncMetadataLists(updatedCategories).catch(console.error);
     if (category.toLowerCase() === oldName.toLowerCase()) {
       setCategory(trimmedNew);
     }
@@ -192,6 +208,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     const executeDelete = () => {
       const updated = StorageService.deleteCategory(catName);
       setCategories(updated);
+      FirestoreSyncService.syncMetadataLists(updated).catch(console.error);
       if (category.toLowerCase() === catName.toLowerCase()) {
         setCategory('');
       }
@@ -302,10 +319,12 @@ export const ProductView: React.FC<ProductViewProps> = ({
     if (category.trim()) {
       const updatedCats = StorageService.addCategory(category.trim());
       setCategories(updatedCats);
+      FirestoreSyncService.syncMetadataLists(updatedCats).catch(console.error);
     }
     if (vendor.trim()) {
       const updatedVends = StorageService.addVendor(vendor.trim());
       setVendors(updatedVends);
+      FirestoreSyncService.syncMetadataLists(undefined, updatedVends).catch(console.error);
     }
 
     onSaveProduct(prod);

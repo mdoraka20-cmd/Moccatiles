@@ -1,0 +1,236 @@
+{
+  "entities": {
+    "ShopConfig": {
+      "title": "ShopConfig",
+      "description": "Store profile and print configuration",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Shop name" },
+        "address": { "type": "string", "description": "Shop address" },
+        "phones": { "type": "string", "description": "Shop phone numbers" },
+        "web": { "type": "string", "description": "Website or email details" },
+        "note": { "type": "string", "description": "Special invoice note" },
+        "preparedBy": { "type": "string", "description": "Name for prepared by signature" },
+        "startInvoiceNo": { "type": "string", "description": "Yearly starting invoice number" },
+        "footerText": { "type": "string", "description": "Footer text line" },
+        "logoUrl": { "type": "string", "description": "Store logo image URL or data" }
+      },
+      "required": ["name", "address"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Product or tile catalog item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Unique product ID" },
+        "code": { "type": "string", "description": "Product code" },
+        "category": { "type": "string", "description": "Tile or product category" },
+        "vendor": { "type": "string", "description": "Vendor or manufacturer" },
+        "grade": { "type": "string", "description": "Quality grade A/B/C" },
+        "name": { "type": "string", "description": "Product full title" },
+        "isTile": { "type": "boolean", "description": "Whether item is tile with SFT packaging" },
+        "w": { "type": "number", "description": "Width dimension" },
+        "h": { "type": "number", "description": "Height dimension" },
+        "scm": { "type": "number", "description": "Square meters per carton" },
+        "sftPack": { "type": "number", "description": "Square feet per pack" },
+        "qtyPack": { "type": "number", "description": "Quantity pieces per carton" },
+        "rate": { "type": "number", "description": "Purchase unit rate" },
+        "price": { "type": "number", "description": "Selling unit price" },
+        "stockBox": { "type": "number", "description": "Stock count in boxes" },
+        "stockPiece": { "type": "number", "description": "Stock count in loose pieces" },
+        "stockSft": { "type": "number", "description": "Total stock in square feet" }
+      },
+      "required": ["id", "code", "name", "price"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Customer unique ID" },
+        "name": { "type": "string", "description": "Customer name" },
+        "address": { "type": "string", "description": "Customer address" },
+        "phone": { "type": "string", "description": "Contact phone" },
+        "deal": { "type": "string", "description": "Dealer or deal contact" },
+        "openDue": { "type": "number", "description": "Opening due balance" }
+      },
+      "required": ["id", "name"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Sales invoice record",
+      "type": "object",
+      "properties": {
+        "no": { "type": "number", "description": "Invoice number" },
+        "date": { "type": "string", "description": "Invoice date and time" },
+        "custId": { "type": "number", "description": "Customer ID" },
+        "custName": { "type": "string", "description": "Customer name" },
+        "address": { "type": "string", "description": "Delivery address" },
+        "phone": { "type": "string", "description": "Customer phone" },
+        "deal": { "type": "string", "description": "Dealer name" },
+        "comment": { "type": "string", "description": "Memo or remark note" },
+        "labor": { "type": "number", "description": "Labor and carriage cost" },
+        "discount": { "type": "number", "description": "Discount amount" },
+        "prevDue": { "type": "number", "description": "Previous due amount" },
+        "cash": { "type": "number", "description": "Cash paid" },
+        "bank": { "type": "number", "description": "Bank paid" },
+        "bkash": { "type": "number", "description": "bKash paid" },
+        "deliveryStatus": { "type": "string", "description": "Delivery status: pending, partial, delivered" },
+        "items": { "type": "array", "description": "List of sold items" }
+      },
+      "required": ["no", "custId", "custName"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Money receipt or customer payment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Payment receipt ID" },
+        "date": { "type": "string", "description": "Payment date and time" },
+        "custId": { "type": "number", "description": "Customer ID" },
+        "custName": { "type": "string", "description": "Customer name" },
+        "amount": { "type": "number", "description": "Payment amount" },
+        "remark": { "type": "string", "description": "Payment remark" },
+        "method": { "type": "string", "description": "Payment channel: Cash, Bkash, Bank, Cheque" }
+      },
+      "required": ["id", "custId", "amount"]
+    },
+    "Txn": {
+      "title": "Txn",
+      "description": "Daily income or expense record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Transaction ID" },
+        "date": { "type": "string", "description": "Transaction date" },
+        "isIncome": { "type": "boolean", "description": "True for income, false for expense" },
+        "head": { "type": "string", "description": "Income or expense category / head" },
+        "amount": { "type": "number", "description": "Amount in Taka" }
+      },
+      "required": ["id", "head", "amount"]
+    },
+    "DealerDeal": {
+      "title": "DealerDeal",
+      "description": "Dealer or project contractor deal profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Dealer ID" },
+        "name": { "type": "string", "description": "Dealer or deal title" },
+        "phone": { "type": "string", "description": "Dealer phone number" },
+        "address": { "type": "string", "description": "Dealer location" },
+        "note": { "type": "string", "description": "Note or comments" }
+      },
+      "required": ["id", "name"]
+    },
+    "AppUser": {
+      "title": "AppUser",
+      "description": "Application user account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User identifier" },
+        "name": { "type": "string", "description": "User display name" },
+        "username": { "type": "string", "description": "Login username" },
+        "password": { "type": "string", "description": "User password" },
+        "role": { "type": "string", "description": "Role: admin or staff" },
+        "phone": { "type": "string", "description": "User mobile number" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "username", "role"]
+    },
+    "StockInRecord": {
+      "title": "StockInRecord",
+      "description": "Vendor goods received inventory purchase challan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Stock In ID" },
+        "vendorName": { "type": "string", "description": "Vendor name" },
+        "vendorChallanNo": { "type": "string", "description": "Vendor invoice/challan number" },
+        "referenceNo": { "type": "string", "description": "Purchase order reference" },
+        "date": { "type": "string", "description": "Received date" },
+        "note": { "type": "string", "description": "Warehouse note" },
+        "totalAmount": { "type": "number", "description": "Total purchase value" },
+        "receivedBy": { "type": "string", "description": "Receiver staff name" },
+        "items": { "type": "array", "description": "Received products list" }
+      },
+      "required": ["id", "vendorName"]
+    },
+    "DeliveryChallan": {
+      "title": "DeliveryChallan",
+      "description": "Goods dispatch delivery challan",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Dispatch trip ID" },
+        "challanNo": { "type": "string", "description": "Challan code" },
+        "invoiceNo": { "type": "number", "description": "Reference invoice number" },
+        "custId": { "type": "number", "description": "Customer ID" },
+        "custName": { "type": "string", "description": "Customer name" },
+        "address": { "type": "string", "description": "Destination address" },
+        "phone": { "type": "string", "description": "Recipient phone" },
+        "deal": { "type": "string", "description": "Deal or contact" },
+        "date": { "type": "string", "description": "Dispatch date and time" },
+        "vehicleNo": { "type": "string", "description": "Vehicle number" },
+        "driverName": { "type": "string", "description": "Driver name" },
+        "driverPhone": { "type": "string", "description": "Driver phone number" },
+        "note": { "type": "string", "description": "Delivery notes" },
+        "dispatchedBy": { "type": "string", "description": "Staff incharge" },
+        "items": { "type": "array", "description": "Dispatched items" }
+      },
+      "required": ["id", "challanNo", "invoiceNo"]
+    },
+    "MetadataDoc": {
+      "title": "MetadataDoc",
+      "description": "System lookup metadata like categories, vendors, and staff permissions",
+      "type": "object",
+      "properties": {
+        "categories": { "type": "array", "description": "List of categories" },
+        "vendors": { "type": "array", "description": "List of vendors" },
+        "staffPerms": { "type": "object", "description": "Staff permission flags" }
+      }
+    }
+  },
+  "firestore": {
+    "/shop/{configId}": {
+      "schema": "ShopConfig",
+      "description": "Store configuration and print settings"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Product catalog and live stock balances"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer accounts and balances"
+    },
+    "/invoices/{invoiceNo}": {
+      "schema": "Invoice",
+      "description": "Sales invoices and billing records"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Customer payment receipts"
+    },
+    "/txns/{txnId}": {
+      "schema": "Txn",
+      "description": "Daily expense and income entries"
+    },
+    "/dealers/{dealerId}": {
+      "schema": "DealerDeal",
+      "description": "Dealer profiles"
+    },
+    "/users/{userId}": {
+      "schema": "AppUser",
+      "description": "Application user logins and roles"
+    },
+    "/stockInRecords/{stockInId}": {
+      "schema": "StockInRecord",
+      "description": "Inventory stock-in records"
+    },
+    "/deliveryChallans/{challanId}": {
+      "schema": "DeliveryChallan",
+      "description": "Delivery dispatch challans"
+    },
+    "/metadata/{metaId}": {
+      "schema": "MetadataDoc",
+      "description": "System lookup lists and permissions"
+    }
+  }
+}

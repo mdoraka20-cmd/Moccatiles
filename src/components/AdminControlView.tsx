@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppUser, Customer, DealerDeal, Invoice, UserRole, StaffPermissions } from '../types';
 import { StorageService, defaultStaffPermissions } from '../services/storage';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import {
   ShieldCheck,
   Users,
@@ -74,6 +75,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
 
   const handleSavePerms = () => {
     StorageService.saveStaffPermissions(staffPerms);
+    FirestoreSyncService.syncMetadataLists(undefined, undefined, staffPerms).catch(console.error);
     setPermsStatusMsg('স্টাফ পারমিশন ও নিয়ন্ত্রণ সফলভাবে সংরক্ষিত হয়েছে!');
     onDataChanged();
     setTimeout(() => setPermsStatusMsg(''), 4000);
@@ -82,6 +84,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   const handleResetPerms = () => {
     setStaffPerms(defaultStaffPermissions);
     StorageService.saveStaffPermissions(defaultStaffPermissions);
+    FirestoreSyncService.syncMetadataLists(undefined, undefined, defaultStaffPermissions).catch(console.error);
     setPermsStatusMsg('স্টাফ পারমিশন ডিফল্ট মানে রিসেট করা হয়েছে!');
     onDataChanged();
     setTimeout(() => setPermsStatusMsg(''), 4000);
@@ -115,6 +118,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       });
       setUsers(updated);
       StorageService.saveUsers(updated);
+      FirestoreSyncService.syncSaveUsers(updated).catch(console.error);
       setUserStatusMsg('ব্যবহারকারী সফলভাবে আপডেট হয়েছে!');
     } else {
       // Check duplicate username
@@ -135,6 +139,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       const updated = [...users, newUser];
       setUsers(updated);
       StorageService.saveUsers(updated);
+      FirestoreSyncService.syncSaveUsers(updated).catch(console.error);
       setUserStatusMsg('নতুন ব্যবহারকারী তৈরি হয়েছে!');
     }
 
@@ -167,6 +172,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     const updated = users.filter((x) => x.id !== u.id);
     setUsers(updated);
     StorageService.saveUsers(updated);
+    FirestoreSyncService.syncDeleteUser(u.id).catch(console.error);
     setUserStatusMsg(`সফলভাবে ব্যবহারকারী "${u.name}" মুছে ফেলা হয়েছে!`);
     onDataChanged();
     setTimeout(() => setUserStatusMsg(''), 3000);
@@ -207,6 +213,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       });
       setDealers(updated);
       StorageService.saveDealers(updated);
+      FirestoreSyncService.syncSaveDealers(updated).catch(console.error);
       setDealStatusMsg('ডিল তথ্য আপডেট হয়েছে!');
     } else {
       const existing = dealers.find(
@@ -228,6 +235,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       const updated = [...dealers, newD];
       setDealers(updated);
       StorageService.saveDealers(updated);
+      FirestoreSyncService.syncSaveDealers(updated).catch(console.error);
       setDealStatusMsg('নতুন ডিল সংরক্ষিত হয়েছে!');
     }
 
@@ -248,6 +256,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     const updated = dealers.filter((x) => x.id !== d.id);
     setDealers(updated);
     StorageService.saveDealers(updated);
+    FirestoreSyncService.syncDeleteDealer(d.id).catch(console.error);
     setDealStatusMsg(`সফলভাবে ডিল "${d.name}" মুছে ফেলা হয়েছে!`);
     onDataChanged();
     setTimeout(() => setDealStatusMsg(''), 3000);
@@ -293,6 +302,10 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     });
     setDealers(updatedDealers);
     StorageService.saveDealers(updatedDealers);
+    FirestoreSyncService.syncSaveDealers(updatedDealers).catch(console.error);
+    for (const inv of allInvs) {
+      FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
+    }
     setDealStatusMsg(`সফলভাবে ${count} টি চালানে এবং মাস্টার তালিকায় "${oldName}" পরিবর্তন করে "${newName}" করা হয়েছে!`);
     setRenameModalOpen(false);
     setTargetDealForRename(null);

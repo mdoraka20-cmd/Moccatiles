@@ -140,9 +140,9 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
             <span className="font-mono">{currentDateStr}</span>
           </div>
 
-          <div className="flex items-center gap-1 font-mono text-slate-400">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Online</span>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-600/50 text-emerald-300 font-mono text-[10px]" title="Firebase ক্লাউড ডাটাবেস সক্রিয় - সব ডিভাইসে লাইভ সিঙ্ক হচ্ছে">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Firebase Live</span>
           </div>
         </div>
       </div>

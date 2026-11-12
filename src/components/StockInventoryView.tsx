@@ -12,6 +12,7 @@ import {
   StaffPermissions,
 } from '../types';
 import { StorageService } from '../services/storage';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatMoney, formatQty, parseNum, formatDateBangla, formatDateTimeBangla } from '../utils/numberWords';
 import {
   Package,
@@ -193,7 +194,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       receivedBy: StorageService.getCurrentUser().name,
     };
 
-    StorageService.addStockInRecord(record);
+    FirestoreSyncService.syncAddStockInRecord(record).catch(console.error);
     onStockUpdated();
     showMsg(`স্টক ইন রেকর্ড #${record.id} সফলভাবে সংরক্ষিত হয়েছে!`);
 
@@ -283,7 +284,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       items: dispatchItems,
     };
 
-    StorageService.addDeliveryChallan(deliveryChallan);
+    FirestoreSyncService.syncAddDeliveryChallan(deliveryChallan).catch(console.error);
     onStockUpdated();
     showMsg(`চালান ${challanNo} সম্পূর্ণ ডেলিভারি সম্পন্ন ও স্টক আউট হয়েছে!`);
 
@@ -360,7 +361,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       items: dispatchItems,
     };
 
-    StorageService.addDeliveryChallan(deliveryChallan);
+    FirestoreSyncService.syncAddDeliveryChallan(deliveryChallan).catch(console.error);
     onStockUpdated();
     setDeliveryModalInvoice(null);
     showMsg(`চালান ${challanNo} সফলভাবে ডেলিভারি ও স্টক আউট হয়েছে!`);

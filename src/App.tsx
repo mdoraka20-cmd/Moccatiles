@@ -21,6 +21,7 @@ import { LoginModal } from './components/LoginModal';
 import { LoginPage } from './components/LoginPage';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { formatDateBangla } from './utils/numberWords';
+import { FirestoreSyncService } from './services/firestoreSync';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -146,6 +147,23 @@ export default function App() {
     };
     updateTime();
     const interval = setInterval(updateTime, 60000);
+
+    // Initialize real-time cross-device sync with Firebase Firestore
+    FirestoreSyncService.initRealtimeSync({
+      onShopUpdate: (newShop) => setShop(newShop),
+      onProductsUpdate: (newProds) => setProducts(newProds),
+      onCustomersUpdate: (newCusts) => setCustomers(newCusts),
+      onInvoicesUpdate: (newInvs) => setInvoices(newInvs),
+      onPaymentsUpdate: (newPays) => setPayments(newPays),
+      onTxnsUpdate: (newTxns) => setTxns(newTxns),
+      onUsersUpdate: (newUsers) => {
+        const current = StorageService.getCurrentUser();
+        const matched = newUsers.find((u) => u.id === current.id);
+        if (matched) setCurrentUser(matched);
+      },
+      onStaffPermsUpdate: (perms) => setStaffPermissions(perms),
+    });
+
     return () => clearInterval(interval);
   }, []);
 
@@ -172,6 +190,7 @@ export default function App() {
     }
     setInvoices(updated);
     StorageService.saveInvoices(updated);
+    FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
 
     // Refresh customers in state in case new customer was added
     setCustomers(StorageService.getCustomers());
@@ -195,10 +214,15 @@ export default function App() {
     const updated = invoices.filter((i) => i.no !== no);
     setInvoices(updated);
     StorageService.saveInvoices(updated);
+    FirestoreSyncService.syncDeleteInvoice(no).catch(console.error);
   };
 
   const handleUpdateInvoiceDeal = (invoiceNo: number, newDeal: string) => {
     setInvoices(StorageService.getInvoices());
+    const inv = StorageService.getInvoices().find((i) => i.no === invoiceNo);
+    if (inv) {
+      FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
+    }
   };
 
   // Handlers for Customer
@@ -213,12 +237,14 @@ export default function App() {
     }
     setCustomers(updated);
     StorageService.saveCustomers(updated);
+    FirestoreSyncService.syncSaveCustomer(cust).catch(console.error);
   };
 
   const handleDeleteCustomer = (id: number) => {
     const updated = customers.filter((c) => c.id !== id);
     setCustomers(updated);
     StorageService.saveCustomers(updated);
+    FirestoreSyncService.syncDeleteCustomer(id).catch(console.error);
   };
 
   // Handlers for Products
@@ -233,12 +259,14 @@ export default function App() {
     }
     setProducts(updated);
     StorageService.saveProducts(updated);
+    FirestoreSyncService.syncSaveProduct(prod).catch(console.error);
   };
 
   const handleDeleteProduct = (id: number) => {
     const updated = products.filter((p) => p.id !== id);
     setProducts(updated);
     StorageService.saveProducts(updated);
+    FirestoreSyncService.syncDeleteProduct(id).catch(console.error);
   };
 
   // Handlers for Payments
@@ -246,6 +274,7 @@ export default function App() {
     const updated = [payment, ...payments];
     setPayments(updated);
     StorageService.savePayments(updated);
+    FirestoreSyncService.syncSavePayment(payment).catch(console.error);
 
     if (print) {
       setPrintModal({
@@ -260,6 +289,7 @@ export default function App() {
     const updated = payments.filter((p) => p.id !== id);
     setPayments(updated);
     StorageService.savePayments(updated);
+    FirestoreSyncService.syncDeletePayment(id).catch(console.error);
   };
 
   // Handlers for Txns
@@ -267,18 +297,21 @@ export default function App() {
     const updated = [t, ...txns];
     setTxns(updated);
     StorageService.saveTxns(updated);
+    FirestoreSyncService.syncSaveTxn(t).catch(console.error);
   };
 
   const handleDeleteTxn = (id: number) => {
     const updated = txns.filter((t) => t.id !== id);
     setTxns(updated);
     StorageService.saveTxns(updated);
+    FirestoreSyncService.syncDeleteTxn(id).catch(console.error);
   };
 
   // Shop Config
   const handleSaveShop = (updatedShop: ShopConfig) => {
     setShop(updatedShop);
     StorageService.saveShop(updatedShop);
+    FirestoreSyncService.syncShop(updatedShop).catch(console.error);
   };
 
   // If not logged in, show the dedicated separate Login Page
