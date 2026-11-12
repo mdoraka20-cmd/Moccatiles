@@ -78,14 +78,14 @@ export const defaultStaffPermissions: StaffPermissions = {
 };
 
 export const defaultShopConfig: ShopConfig = {
-  name: 'মেসার্স সততা টাইলস ও স্যানিটারি',
-  address: 'বাড়ি নং ১২, মেইন রোড, রামপুরা বাজার, ঢাকা-১২১৯',
-  phones: '০১৭১২-৩৪৫৬৭৮, ০১৮১২-৩৪৫৬৭৮',
-  web: 'Email: info@satatiles.com | Web: www.satatiles.com',
-  note: 'বিশেষ দ্রষ্টব্য : ভেজা, সিমেন্ট লাগানো, চায়না টাইলস এবং ২ মাসের অতিরিক্ত সময় হলে যে কোন টাইলস ফেরৎ যোগ্য নহে।\nসাপ্তাহিক বন্ধ : শুক্রবার',
-  preparedBy: 'মোঃ রফিকুল ইসলাম (ম্যানেজার)',
-  startInvoiceNo: '240001',
-  footerText: 'আমাদের সেবায় সন্তুষ্ট থাকলে আবার আসবেন। আপনার দিনটি শুভ হোক!',
+  name: 'MOCCA TILES & FITTINGS',
+  address: 'Abu Taher Plaza, Puniout Bypass, Brahmanbaria',
+  phones: '01748-293 800 (BKash) , 01996-701 702 , 01996-701 707',
+  web: 'Web : http://noortiles.wordpress.com, Gmail : tilesnoor@gmail.com',
+  note: 'চায়না, ভেজা, সিমেন্ট লাগানো টাইলস ফেরত যোগ্য নয়।\nঅবশ্যই ২ মাসের ভিতর টাইলস ফেরত দিতে হবে।',
+  preparedBy: 'AnayeT',
+  startInvoiceNo: '260001',
+  footerText: 'Software developed by ORS IT- 01732970999',
   logoUrl: '',
 };
 
@@ -400,7 +400,12 @@ export class StorageService {
   static getShop(): ShopConfig {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SHOP);
-      return data ? JSON.parse(data) : defaultShopConfig;
+      if (!data) return defaultShopConfig;
+      const parsed = JSON.parse(data);
+      if (parsed.name === 'মেসার্স সততা টাইলস ও স্যানিটারি') {
+        return defaultShopConfig;
+      }
+      return { ...defaultShopConfig, ...parsed };
     } catch {
       return defaultShopConfig;
     }
@@ -937,17 +942,15 @@ export class StorageService {
   }
 
   static nextInvoiceNo(): number {
+    const yr = new Date().getFullYear() % 100; // e.g. 26 in 2026, 27 in 2027
+    const minNo = yr * 10000;
+    const maxNo = (yr + 1) * 10000;
     const invoices = this.getInvoices();
-    if (invoices.length > 0) {
-      return Math.max(...invoices.map((i) => i.no)) + 1;
+    const currentYearInvoices = invoices.filter((i) => i.no >= minNo && i.no < maxNo);
+    if (currentYearInvoices.length > 0) {
+      return Math.max(...currentYearInvoices.map((i) => i.no)) + 1;
     }
-    const shop = this.getShop();
-    const startNo = parseInt(shop.startInvoiceNo, 10);
-    if (!isNaN(startNo) && startNo > 0) {
-      return startNo;
-    }
-    const yr = new Date().getFullYear() % 100;
-    return yr * 100000 + 1;
+    return yr * 10000 + 1; // starts at 260001 for 2026, 270001 for 2027
   }
 
   static nextProductId(): number {

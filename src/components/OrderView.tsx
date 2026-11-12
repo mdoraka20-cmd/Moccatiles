@@ -395,10 +395,8 @@ export const OrderView: React.FC<OrderViewProps> = ({
 
     if (sendToDeliveryQueue && onNavigateToStock) {
       setTimeout(() => {
-        if (confirm(`Invoice #${inv.no} সংরক্ষিত ও চালানে পাঠানো হয়েছে! স্টক ও চালান ডেলিভারি পেজে যেতে চান?`)) {
-          onNavigateToStock();
-        }
-      }, 400);
+        onNavigateToStock();
+      }, 500);
     }
   };
 
@@ -472,9 +470,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
         onUpdateInvoiceDeal(inv.no, inv.deal); // Triggers parent reload
       }
     }
-    if (confirm(`Invoice #${inv.no} চালান ডেলিভারি পেন্ডিং কিউতে রাখা হয়েছে। স্টক ও চালান পেজে যেতে চান?`)) {
-      if (onNavigateToStock) onNavigateToStock();
-    }
+    setStatusMsg(`Invoice #${inv.no} চালান ডেলিভারি পেন্ডিং কিউতে রাখা হয়েছে।`);
+    setTimeout(() => setStatusMsg(''), 4000);
+    if (onNavigateToStock) onNavigateToStock();
   };
 
   // Filter right side list
@@ -804,6 +802,33 @@ export const OrderView: React.FC<OrderViewProps> = ({
               <Send className="w-3.5 h-3.5" />
               Save + চালানে পাঠান
             </button>
+            {invoices.some((i) => i.no === invoiceNo) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const executeDelete = () => {
+                    onDeleteInvoice(invoiceNo);
+                    resetForm();
+                  };
+                  if (currentUser?.role === 'admin') {
+                    executeDelete();
+                  } else if (onRequireAdminAuth) {
+                    onRequireAdminAuth(
+                      `চালান #${invoiceNo} মুছে ফেলা`,
+                      executeDelete,
+                      `গ্রাহক: ${custName}`
+                    );
+                  } else {
+                    executeDelete();
+                  }
+                }}
+                className="px-3.5 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
+                title={currentUser?.role === 'admin' ? 'সরাসরি চালান মুছুন (Admin Delete)' : 'এডমিন পারমিশন নিয়ে মুছুন'}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                চালান মুছুন (Delete)
+              </button>
+            )}
             <div className="ml-auto flex items-center gap-2 text-slate-600 font-semibold text-xs">
               <span>মোট Sft:</span>
               <span className="font-mono font-bold text-slate-900 bg-slate-200 px-2 py-0.5 rounded">
@@ -912,6 +937,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
                     <th className="p-1.5 text-right">Sft</th>
                     <th className="p-1.5 text-right">দর (৳)</th>
                     <th className="p-1.5 text-right">মোট (৳)</th>
+                    <th className="p-1.5 text-center w-8">মুছুন</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -933,11 +959,25 @@ export const OrderView: React.FC<OrderViewProps> = ({
                       <td className="p-1.5 text-right font-mono font-bold text-slate-900">
                         {it.total.toFixed(2)}
                       </td>
+                      <td className="p-1.5 text-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLines(lines.filter((_, i) => i !== idx));
+                            if (selectedLineIndex === idx) setSelectedLineIndex(-1);
+                          }}
+                          title="এই আইটেমটি সরান"
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {lines.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="p-4 text-center text-slate-400 italic">
+                      <td colSpan={9} className="p-4 text-center text-slate-400 italic">
                         এখনো কোনো আইটেম যোগ করা হয়নি। উপরে পণ্য ও পরিমাণ দিয়ে 'Add' চাপুন।
                       </td>
                     </tr>
@@ -1023,6 +1063,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
                 <th className="p-1.5">কাস্টমার ডিল</th>
                 <th className="p-1.5 text-right w-18">মূল্য (৳)</th>
                 <th className="p-1.5 text-center w-14">ডেলিভারি</th>
+                <th className="p-1.5 text-center w-8">মুছুন</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1082,12 +1123,41 @@ export const OrderView: React.FC<OrderViewProps> = ({
                         {deliveryStatus === 'delivered' ? 'সম্পূর্ণ' : deliveryStatus === 'partial' ? 'আংশিক' : 'পেন্ডিং'}
                       </span>
                     </td>
+                    <td className="p-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const executeDelete = () => {
+                            onDeleteInvoice(inv.no);
+                            if (selectedRightInvoice?.no === inv.no) {
+                              setSelectedRightInvoice(null);
+                            }
+                          };
+                          if (currentUser?.role === 'admin') {
+                            executeDelete();
+                          } else if (onRequireAdminAuth) {
+                            onRequireAdminAuth(
+                              `চালান #${inv.no} মুছে ফেলা`,
+                              executeDelete,
+                              `গ্রাহক: ${inv.custName} | মূল্য: ৳ ${formatMoney(sub2)}`
+                            );
+                          } else {
+                            executeDelete();
+                          }
+                        }}
+                        title={currentUser?.role === 'admin' ? 'সরাসরি চালান মুছুন (Admin Delete)' : 'এডমিন পারমিশন নিয়ে মুছুন'}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {filteredInvoices.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-slate-400">
+                  <td colSpan={7} className="p-6 text-center text-slate-400">
                     কোনো চালান পাওয়া যায়নি
                   </td>
                 </tr>
@@ -1195,9 +1265,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
                     )}`
                   );
                 } else {
-                  if (window.confirm(`Invoice #${selectedRightInvoice.no} মুছে ফেলবেন?`)) {
-                    executeDelete();
-                  }
+                  executeDelete();
                 }
               }}
               disabled={!selectedRightInvoice}

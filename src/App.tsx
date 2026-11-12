@@ -114,9 +114,8 @@ export default function App() {
     actionDetails?: string
   ) => {
     if (currentUser.role === 'admin') {
-      if (window.confirm(`আপনি কি নিশ্চিতভাবে "${actionTitle}" করতে চান?`)) {
-        onExecute();
-      }
+      // Super Admin deletes/executes directly without window.confirm blocking
+      onExecute();
     } else {
       setAdminAuthModal({
         isOpen: true,

@@ -184,9 +184,7 @@ export const IncomeExpenseView: React.FC<IncomeExpenseViewProps> = ({
                               `${t.isIncome ? 'আয়' : 'ব্যয়'}: ${t.head} | পরিমাণ: ৳ ${formatMoney(t.amount)} | তারিখ: ${t.date}`
                             );
                           } else {
-                            if (confirm(`এন্ট্রি #${t.id} মুছে ফেলবেন?`)) {
-                              executeDelete();
-                            }
+                            executeDelete();
                           }
                         }}
                         className="p-1 text-slate-400 hover:text-rose-700 rounded cursor-pointer"

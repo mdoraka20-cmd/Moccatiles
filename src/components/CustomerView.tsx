@@ -79,11 +79,6 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
 
   const handleDelete = () => {
     if (!selectedCust) return;
-    const hasInvoices = invoices.some((v) => v.custId === selectedCust.id);
-    if (hasInvoices) {
-      alert('এই গ্রাহকের বিল বা লেনদেন আছে, তাই মুছা যাবে না।');
-      return;
-    }
     const executeDelete = () => {
       onDeleteCustomer(selectedCust.id);
       handleNew();
@@ -96,9 +91,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
         `গ্রাহক আইডি: #${selectedCust.id} | মোবাইল: ${selectedCust.phone || '—'} | ডিলার: ${selectedCust.deal || '—'}`
       );
     } else {
-      if (confirm(`গ্রাহক '${selectedCust.name}' মুছবেন?`)) {
-        executeDelete();
-      }
+      executeDelete();
     }
   };
 
@@ -319,6 +312,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
                 <th className="p-2">মোবাইল (Mobile)</th>
                 <th className="p-2">Deal / Contact</th>
                 <th className="p-2 text-right w-28">বর্তমান বাকি (Balance)</th>
+                <th className="p-2 text-center w-12">মুছুন</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -349,12 +343,41 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
                         <span className="text-slate-500">৳ 0.00</span>
                       )}
                     </td>
+                    <td className="p-2 text-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const executeDelete = () => {
+                            onDeleteCustomer(cust.id);
+                            if (selectedCust?.id === cust.id) {
+                              handleNew();
+                            }
+                          };
+                          if (currentUser?.role === 'admin') {
+                            executeDelete();
+                          } else if (onRequireAdminAuth) {
+                            onRequireAdminAuth(
+                              `গ্রাহক '${cust.name}' মুছে ফেলা`,
+                              executeDelete,
+                              `গ্রাহক আইডি: #${cust.id} | মোবাইল: ${cust.phone || '—'}`
+                            );
+                          } else {
+                            executeDelete();
+                          }
+                        }}
+                        title={currentUser?.role === 'admin' ? 'সরাসরি গ্রাহক মুছুন (Admin Delete)' : 'এডমিন পারমিশন নিয়ে মুছুন'}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {filteredCustomers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center text-slate-400">
+                  <td colSpan={7} className="p-6 text-center text-slate-400">
                     কোনো গ্রাহক খুঁজে পাওয়া যায়নি
                   </td>
                 </tr>

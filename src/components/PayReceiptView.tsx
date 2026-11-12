@@ -258,9 +258,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                                 `গ্রাহক: ${p.custName} | পরিমাণ: ৳ ${formatMoney(p.amount)} | মাধ্যম: ${p.method || 'Cash'}`
                               );
                             } else {
-                              if (confirm(`Receipt #${p.id} (${formatMoney(p.amount)} ৳) মুছে ফেলবেন?`)) {
-                                executeDelete();
-                              }
+                              executeDelete();
                             }
                           }}
                           title="মুছুন"

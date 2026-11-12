@@ -124,30 +124,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ shop, onSaveShop }) 
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">Prepared by (নাম) :</label>
-              <input
-                type="text"
-                value={preparedBy}
-                onChange={(e) => setPreparedBy(e.target.value)}
-                placeholder="ম্যানেজার / প্রস্তুতকারীর নাম"
-                className="w-full bg-white border border-slate-300 rounded px-3 py-1.5 text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-700 font-semibold mb-1">
-                শুরুর Invoice নম্বর (Start Invoice No) :
-              </label>
-              <input
-                type="text"
-                value={startInvoiceNo}
-                onChange={(e) => setStartInvoiceNo(e.target.value)}
-                placeholder="e.g. 240001"
-                className="w-full bg-white border border-slate-300 rounded px-3 py-1.5 font-mono text-slate-900"
-              />
-            </div>
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">
+              Prepared by (প্রস্তুতকারী - মেমু ও চালানের নিচে স্বাক্ষরের উপরে প্রদর্শিত নাম) :
+            </label>
+            <input
+              type="text"
+              value={preparedBy}
+              onChange={(e) => setPreparedBy(e.target.value)}
+              placeholder="e.g. AnayeT বা প্রস্তুতকারীর নাম"
+              className="w-full bg-white border border-slate-300 rounded px-3 py-1.5 text-slate-900 font-medium"
+            />
           </div>
 
           <div>

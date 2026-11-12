@@ -159,6 +159,14 @@ export const generatePrintableHtmlDocument = (contentHtml: string, title: string
     .w-28 { width: 7rem; }
     .w-36 { width: 9rem; }
     .w-56 { width: 14rem; }
+    .rounded-3xl { border-radius: 1.5rem !important; }
+    .underline { text-decoration: underline !important; }
+    .border-none { border: none !important; }
+    .pr-20 { padding-right: 5rem !important; }
+    .w-\[58\%\] { width: 58% !important; }
+    .w-\[38\%\] { width: 38% !important; }
+    .min-h-\[38px\] { min-height: 38px !important; }
+    .min-h-\[200px\] { min-height: 200px !important; }
     
     @media print {
       body { padding: 0 !important; margin: 0 !important; }

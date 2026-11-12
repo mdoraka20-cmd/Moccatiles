@@ -80,13 +80,11 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   };
 
   const handleResetPerms = () => {
-    if (confirm('স্টাফদের অনুমতিসমূহ ডিফল্ট মানে রিসেট করতে চান?')) {
-      setStaffPerms(defaultStaffPermissions);
-      StorageService.saveStaffPermissions(defaultStaffPermissions);
-      setPermsStatusMsg('স্টাফ পারমিশন ডিফল্ট মানে সেট করা হয়েছে!');
-      onDataChanged();
-      setTimeout(() => setPermsStatusMsg(''), 4000);
-    }
+    setStaffPerms(defaultStaffPermissions);
+    StorageService.saveStaffPermissions(defaultStaffPermissions);
+    setPermsStatusMsg('স্টাফ পারমিশন ডিফল্ট মানে রিসেট করা হয়েছে!');
+    onDataChanged();
+    setTimeout(() => setPermsStatusMsg(''), 4000);
   };
 
   // ---------------- USER MANAGEMENT ----------------
@@ -95,7 +93,8 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     setUserStatusMsg('');
 
     if (!userLogin.trim() || !userName.trim() || !userPassword.trim()) {
-      alert('সকল প্রয়োজনীয় তথ্য পূরণ করুন।');
+      setUserStatusMsg('❌ সকল প্রয়োজনীয় তথ্য পূরণ করুন।');
+      setTimeout(() => setUserStatusMsg(''), 3500);
       return;
     }
 
@@ -120,7 +119,8 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     } else {
       // Check duplicate username
       if (users.some((u) => u.username.toLowerCase() === userLogin.trim().toLowerCase())) {
-        alert('এই ইউজারনেমটি ইতিমধ্যে বিদ্যমান। ভিন্ন ইউজারনেম নির্বাচন করুন।');
+        setUserStatusMsg('❌ এই ইউজারনেমটি ইতিমধ্যে বিদ্যমান। ভিন্ন ইউজারনেম নির্বাচন করুন।');
+        setTimeout(() => setUserStatusMsg(''), 3500);
         return;
       }
       const newUser: AppUser = {
@@ -154,20 +154,22 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
 
   const handleDeleteUser = (u: AppUser) => {
     if (u.id === currentUser.id) {
-      alert('আপনি বর্তমানে এই ইউজার হিসেবে লগিন আছেন, এটি ডিলিট করা সম্ভব নয়।');
+      setUserStatusMsg('❌ আপনি বর্তমানে এই ইউজার হিসেবে লগিন আছেন, এটি ডিলিট করা সম্ভব নয়।');
+      setTimeout(() => setUserStatusMsg(''), 4000);
       return;
     }
     const adminCount = users.filter((x) => x.role === 'admin').length;
     if (u.role === 'admin' && adminCount <= 1) {
-      alert('সিস্টেমে কমপক্ষে একজন এডমিন থাকতে হবে।');
+      setUserStatusMsg('❌ সিস্টেমে কমপক্ষে একজন এডমিন থাকতে হবে।');
+      setTimeout(() => setUserStatusMsg(''), 4000);
       return;
     }
-    if (confirm(`ব্যবহারকারী "${u.name}" ডিলিট করতে চান?`)) {
-      const updated = users.filter((x) => x.id !== u.id);
-      setUsers(updated);
-      StorageService.saveUsers(updated);
-      onDataChanged();
-    }
+    const updated = users.filter((x) => x.id !== u.id);
+    setUsers(updated);
+    StorageService.saveUsers(updated);
+    setUserStatusMsg(`সফলভাবে ব্যবহারকারী "${u.name}" মুছে ফেলা হয়েছে!`);
+    onDataChanged();
+    setTimeout(() => setUserStatusMsg(''), 3000);
   };
 
   const handleResetUserForm = () => {
@@ -185,7 +187,8 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     setDealStatusMsg('');
 
     if (!dealName.trim()) {
-      alert('ডিলের নাম দিন।');
+      setDealStatusMsg('❌ ডিলের নাম দিন।');
+      setTimeout(() => setDealStatusMsg(''), 3500);
       return;
     }
 
@@ -210,7 +213,8 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
         (d) => d.name.toLowerCase() === dealName.trim().toLowerCase()
       );
       if (existing) {
-        alert('এই নামের ডিল তালিকায় ইতিমধ্যে সংরক্ষিত আছে!');
+        setDealStatusMsg('❌ এই নামের ডিল তালিকায় ইতিমধ্যে সংরক্ষিত আছে!');
+        setTimeout(() => setDealStatusMsg(''), 3500);
         return;
       }
       const nextId = dealers.length === 0 ? 1 : Math.max(...dealers.map((d) => d.id)) + 1;
@@ -241,13 +245,12 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   };
 
   const handleDeleteDeal = (d: DealerDeal) => {
-    const invCount = invoices.filter((i) => i.deal?.trim().toLowerCase() === d.name.toLowerCase()).length;
-    if (confirm(`ডিল "${d.name}" মুছে ফেলবেন? ${invCount > 0 ? `(এই ডিলে ${invCount} টি চালান রয়েছে)` : ''}`)) {
-      const updated = dealers.filter((x) => x.id !== d.id);
-      setDealers(updated);
-      StorageService.saveDealers(updated);
-      onDataChanged();
-    }
+    const updated = dealers.filter((x) => x.id !== d.id);
+    setDealers(updated);
+    StorageService.saveDealers(updated);
+    setDealStatusMsg(`সফলভাবে ডিল "${d.name}" মুছে ফেলা হয়েছে!`);
+    onDataChanged();
+    setTimeout(() => setDealStatusMsg(''), 3000);
   };
 
   const handleResetDealForm = () => {
@@ -290,11 +293,11 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     });
     setDealers(updatedDealers);
     StorageService.saveDealers(updatedDealers);
-
-    alert(`সফলভাবে ${count} টি চালানে এবং মাস্টার তালিকায় "${oldName}" পরিবর্তন করে "${newName}" করা হয়েছে!`);
+    setDealStatusMsg(`সফলভাবে ${count} টি চালানে এবং মাস্টার তালিকায় "${oldName}" পরিবর্তন করে "${newName}" করা হয়েছে!`);
     setRenameModalOpen(false);
     setTargetDealForRename(null);
     onDataChanged();
+    setTimeout(() => setDealStatusMsg(''), 4000);
   };
 
   const filteredDealers = dealers.filter(

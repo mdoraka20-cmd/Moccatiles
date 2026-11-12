@@ -37,30 +37,21 @@ interface PrintModalProps {
   onClose: () => void;
 }
 
-// NTT Company House Logo matching user reference images
-const NttLogo: React.FC = () => (
-  <div className="flex flex-col items-center shrink-0">
-    <svg width="84" height="68" viewBox="0 0 100 82" className="inline-block">
-      {/* Outer Roof triangle */}
-      <polygon points="50,2 3,34 97,34" fill="none" stroke="#0f172a" strokeWidth="4.5" strokeLinejoin="round" />
-      {/* Inner Roof triangle */}
-      <polygon points="50,9 13,33 87,33" fill="none" stroke="#0f172a" strokeWidth="2" strokeLinejoin="round" />
-      {/* NTT Text */}
-      <text x="50" y="28" textAnchor="middle" fontSize="15" fontWeight="900" fill="#0f172a" fontFamily="Arial, Helvetica, sans-serif" letterSpacing="1">
-        NTT
-      </text>
-      {/* Building Body Outline */}
-      <rect x="18" y="34" width="64" height="32" fill="none" stroke="#0f172a" strokeWidth="3.5" />
-      {/* Vertical Window Grid */}
-      <line x1="34" y1="34" x2="34" y2="66" stroke="#0f172a" strokeWidth="2.2" />
-      <line x1="50" y1="34" x2="50" y2="66" stroke="#0f172a" strokeWidth="2.2" />
-      <line x1="66" y1="34" x2="66" y2="66" stroke="#0f172a" strokeWidth="2.2" />
-      {/* Horizontal Window Grid */}
-      <line x1="18" y1="45" x2="82" y2="45" stroke="#0f172a" strokeWidth="2" />
-      <line x1="18" y1="56" x2="82" y2="56" stroke="#0f172a" strokeWidth="2" />
-      {/* Bottom Text */}
-      <text x="50" y="78" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#0f172a" fontFamily="'Hind Siliguri', sans-serif">
-        Noor Tiles &amp; Fittings
+// MOCCA TILES Logo matching updated user reference images (Update_Challan & Update_Invoice)
+const MoccaTilesLogo: React.FC = () => (
+  <div className="shrink-0 flex flex-col items-center justify-center">
+    <svg width="86" height="72" viewBox="0 0 86 72" className="inline-block rounded shadow-xs">
+      <rect width="86" height="72" rx="3" fill="#1c2a38" />
+      {/* Golden Diamond with M */}
+      <g transform="translate(43, 27)">
+        <rect x="-13" y="-13" width="26" height="26" rx="2" transform="rotate(45)" fill="#f59e0b" stroke="#fef08a" strokeWidth="1.2" />
+        <text x="0" y="5.5" textAnchor="middle" fontSize="15" fontWeight="900" fill="#1c2a38" fontFamily="Arial, Helvetica, sans-serif">
+          M
+        </text>
+      </g>
+      {/* MOCCA TILES text */}
+      <text x="43" y="60" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#ffffff" letterSpacing="0.8" fontFamily="Arial, sans-serif">
+        MOCCA TILES
       </text>
     </svg>
   </div>
@@ -276,15 +267,19 @@ export const PrintModal: React.FC<PrintModalProps> = ({
               </div>
             )}
 
-            {/* ========== EXACT INVOICE & CHALLAN VIEW (Matching c_report and report images) ========== */}
+            {/* ========== EXACT INVOICE & CHALLAN VIEW (Matching Update_Challan and Update_Invoice images) ========== */}
             {(type === 'invoice' || type === 'challan') && invoice && totals && (
               <div>
-                {/* 1. Header with NTT Logo on Left and Centered Shop Info */}
+                {/* 1. Header with Shop Logo on Left and Centered Shop Info */}
                 <div className="flex items-center justify-between pb-1">
-                  <NttLogo />
-                  <div className="text-center grow pr-16">
+                  {shop.logoUrl ? (
+                    <img src={shop.logoUrl} alt="Logo" className="w-[86px] h-[72px] object-contain rounded shrink-0" />
+                  ) : (
+                    <MoccaTilesLogo />
+                  )}
+                  <div className="text-center grow pr-14 sm:pr-20">
                     <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-950 uppercase" style={{ letterSpacing: '0.5px' }}>
-                      {shop.name || 'NOOR TILES & FITTINGS'}
+                      {shop.name || 'MOCCA TILES & FITTINGS'}
                     </h1>
                     <p className="text-xs text-slate-800 font-medium mt-0.5">
                       {shop.address || 'Abu Taher Plaza, Puniout Bypass, Brahmanbaria'}
@@ -292,16 +287,18 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                     <p className="text-xs text-slate-800 font-medium">
                       {shop.phones || '01748-293 800 (BKash) , 01996-701 702 , 01996-701 707'}
                     </p>
-                    <p className="text-[11px] text-slate-700">
-                      {shop.web || 'Web : http://noortiles.wordpress.com, Gmail : tilesnoor@gmail.com'}
-                    </p>
+                    {shop.web && (
+                      <p className="text-[11px] text-slate-700">
+                        {shop.web}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {/* Horizontal dividing line */}
                 <hr className="border-t border-slate-900 my-2" />
 
-                {/* 2. Metadata Section (Customer Underlined Lines on Left, Teal Outline Doc Title on Right) */}
+                {/* 2. Metadata Section (Customer Underlined Lines on Left, Clean Right-aligned Metadata) */}
                 <div className="flex justify-between items-start gap-4 mb-3 text-xs">
                   {/* Left: 4 underlined lines */}
                   <div className="grow space-y-1.5 pr-4">
@@ -311,11 +308,11 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                     </div>
                     <div className="flex border-b border-slate-900 pb-0.5">
                       <span className="font-bold shrink-0 w-28 text-slate-900">Address :</span>
-                      <span className="text-slate-800">{invoice.address || ''}</span>
+                      <span className="text-slate-800 uppercase">{invoice.address || ''}</span>
                     </div>
                     <div className="flex border-b border-slate-900 pb-0.5">
                       <span className="font-bold shrink-0 w-28 text-slate-900">Contact No :</span>
-                      <span className="font-mono text-slate-800">{invoice.phone || ''}</span>
+                      <span className="font-mono text-slate-800">{invoice.phone ? `${invoice.phone} #` : '#'}</span>
                     </div>
                     <div className="flex border-b border-slate-900 pb-0.5">
                       <span className="font-bold shrink-0 w-28 text-slate-900">Coustomer Deal :</span>
@@ -325,46 +322,26 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: Large Teal Hollow Outline Title + Invoice Metadata */}
-                  <div className="shrink-0 w-60 text-right flex flex-col items-end">
-                    <div className="mb-1">
-                      <svg width="180" height="38" viewBox="0 0 180 38">
-                        <text
-                          x="100%"
-                          y="29"
-                          textAnchor="end"
-                          fill="none"
-                          stroke="#457b7d"
-                          strokeWidth="1.8"
-                          fontFamily="Arial, sans-serif"
-                          fontSize="31"
-                          fontWeight="800"
-                          letterSpacing="2"
-                        >
-                          {type === 'challan' ? 'CHALLAN' : 'INVOICE'}
-                        </text>
-                      </svg>
+                  {/* Right: Clean 3 Lines Metadata (Matching Update_Challan & Update_Invoice images) */}
+                  <div className="shrink-0 w-64 text-right flex flex-col justify-end text-xs space-y-1 text-slate-900">
+                    <div>
+                      <span className="font-bold">Invoice No : </span>
+                      <span className="font-mono font-semibold ml-2">{invoice.no}</span>
                     </div>
-                    <div className="text-xs space-y-0.5 text-slate-900">
-                      <div>
-                        <span className="font-bold">Invoice No: </span>
-                        <span className="font-mono font-semibold ml-2">{invoice.no}</span>
-                      </div>
-                      <div>
-                        <span className="font-bold">Sales Date : </span>
-                        <span className="font-mono text-[11px] ml-2">{formatSalesDateTime(invoice.date)}</span>
-                      </div>
-                      <div>
-                        <span className="font-bold">Customer id : </span>
-                        <span className="font-mono font-semibold ml-2">{invoice.custId || '4216428'}</span>
-                      </div>
+                    <div>
+                      <span className="font-bold">Sales Date : </span>
+                      <span className="font-mono text-[11px] ml-2">{formatSalesDateTime(invoice.date)}</span>
+                    </div>
+                    <div>
+                      <span className="font-bold">Customer id : </span>
+                      <span className="font-mono font-semibold ml-2">{invoice.custId || '4216523'}</span>
                     </div>
                   </div>
                 </div>
 
                 {/* 3. Items Table */}
                 {type === 'challan' ? (
-                  /* ================= CHALLAN TABLE (Matching c_report_d768e5b1.jpg) ================= */
+                  /* ================= CHALLAN TABLE (Matching Update_Challan_1b702a16.jpg) ================= */
                   <div className="mb-4">
                     <table className="w-full text-xs border-collapse border border-slate-900">
                       <thead>
@@ -388,7 +365,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                             <td className="border border-slate-900 px-1 py-1 text-center font-mono italic">{idx + 1}</td>
                             <td className="border border-slate-900 px-2 py-1 font-medium italic">{it.name}</td>
                             <td className="border border-slate-900 px-1 py-1 text-center font-mono italic">{formatDimension(it.dim)}</td>
-                            <td className="border border-slate-900 px-1 py-1 text-center font-mono italic font-semibold text-blue-600" style={{ color: '#2563eb' }}>
+                            <td className="border border-slate-900 px-1 py-1 text-center font-mono italic font-semibold text-blue-600 underline" style={{ color: '#2563eb' }}>
                               {(it.isTile ? it.sft : it.piece).toFixed(2)}
                             </td>
                             <td className="border border-slate-900 px-1 py-1 text-center font-mono italic">{it.box || 0}</td>
@@ -397,12 +374,12 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                             <td className="border border-slate-900 px-1 py-1 text-center"></td>
                           </tr>
                         ))}
-                        {/* Total row matching c_report image */}
+                        {/* Total row ending at Piece */}
                         <tr className="border-t-2 border-slate-900 font-bold">
                           <td colSpan={3} className="text-right px-2 py-1 border border-slate-900">
                             Total =
                           </td>
-                          <td className="text-center px-1 py-1 border border-slate-900 font-mono italic font-bold text-blue-600" style={{ color: '#2563eb' }}>
+                          <td className="text-center px-1 py-1 border border-slate-900 font-mono italic font-bold">
                             {invoice.items.reduce((s, i) => s + (i.isTile ? i.sft : i.piece), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="text-center px-1 py-1 border border-slate-900 font-mono italic">
@@ -411,14 +388,14 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                           <td className="text-center px-1 py-1 border border-slate-900 font-mono italic">
                             {invoice.items.reduce((s, i) => s + (i.piece || 0), 0)}
                           </td>
-                          <td className="border border-slate-900"></td>
-                          <td className="border border-slate-900"></td>
+                          <td className="border-none"></td>
+                          <td className="border-none"></td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  /* ================= INVOICE TABLE (Matching report_e9e943c0.jpg) ================= */
+                  /* ================= INVOICE TABLE (Matching Update_Invoice_cdc173bf.jpg) ================= */
                   <div className="mb-3">
                     <table className="w-full text-xs border-collapse border border-slate-900">
                       <thead>
@@ -460,42 +437,37 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                   </div>
                 )}
 
-                {/* 4. Bottom Section for Invoice: Memo, Inword, Warning, Rubber Stamp & Calculation Box */}
+                {/* 4. Bottom Section for Invoice: Rounded Memo Box, Inword, Warning & Rounded Calculation Box */}
                 {type === 'invoice' && (
                   <div className="flex justify-between items-start gap-4 mt-2">
-                    {/* Left: Boxed memo, Inword, Special notice, Rubber Stamp */}
-                    <div className="w-[58%] flex flex-col justify-between min-h-[220px]">
+                    {/* Left: Rounded Memo Box, Inword, Special notice */}
+                    <div className="w-[58%] flex flex-col justify-between min-h-[200px]">
                       <div>
-                        {/* Memo box */}
-                        <div className="border border-slate-900 px-3 py-1.5 text-xs font-bold text-slate-900 mb-3 w-full">
-                          {invoice.comment ? invoice.comment : `দোকান বাকি # ${invoice.no}`}
+                        {/* Rounded Memo box */}
+                        <div className="border border-slate-400 rounded-lg px-3 py-2 text-xs font-semibold text-slate-900 mb-3 w-full min-h-[38px]">
+                          {invoice.comment || ''}
                         </div>
 
-                        {/* Inword */}
+                        {/* Inword with Title Case and "Only" */}
                         <div className="text-xs mb-3">
                           <div className="font-bold text-slate-900">Inword</div>
-                          <div className="font-semibold text-slate-800 italic uppercase">
-                            {totals.paid > 0 ? `${inWords(totals.paid)} ONLY` : 'ONLY'}
+                          <div className="font-semibold text-slate-800 italic">
+                            {totals.paid > 0 ? `${inWords(totals.paid)} Only` : `${inWords(totals.net)} Only`}
                           </div>
                         </div>
 
-                        {/* Special Bengali Notice */}
+                        {/* Special Bengali Notice from shop config */}
                         <div className="text-xs text-slate-900 leading-snug font-medium mb-3">
                           <div className="font-bold">বিশেষ দ্র:</div>
-                          <div>চায়না, ভেজা, সিমেন্ট লাগানো টাইলস</div>
-                          <div>ফেরত যোগ্য নয়। অবশ্যই ২ মাসের</div>
-                          <div>ভিতর টাইলস ফেরত দিতে হবে।</div>
+                          <div className="whitespace-pre-line">
+                            {shop.note || 'চায়না, ভেজা, সিমেন্ট লাগানো টাইলস ফেরত যোগ্য নয়।\nঅবশ্যই ২ মাসের ভিতর টাইলস ফেরত দিতে হবে।'}
+                          </div>
                         </div>
-                      </div>
-
-                      {/* Rubber Stamp (DUE or PAID) */}
-                      <div className="self-end mr-6 -mt-16">
-                        <DuePaidStamp isPaid={isPaid} />
                       </div>
                     </div>
 
-                    {/* Right: Bordered Calculation Box */}
-                    <div className="w-[38%] border border-slate-900 p-2.5 text-xs font-mono">
+                    {/* Right: Rounded Calculation Box (Matching Update_Invoice_cdc173bf.jpg) */}
+                    <div className="w-[38%] border-[1.5px] border-slate-950 rounded-3xl p-3.5 text-xs font-mono shadow-xs">
                       <div className="space-y-1">
                         <div className="flex justify-between text-slate-900">
                           <span className="font-bold">Total :</span>
@@ -531,12 +503,35 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                           <span className="font-bold">{formatAmountCommas(totals.net)}</span>
                         </div>
 
-                        <div className="flex justify-between text-slate-800">
-                          <span className="font-bold">: </span>
-                          <span>{formatAmountCommas(invoice.cash + invoice.bank + invoice.bkash)}</span>
-                        </div>
+                        {/* Paid Breakdown matching the screenshot */}
+                        {invoice.cash > 0 && (
+                          <>
+                            <div className="flex justify-between text-slate-800">
+                              <span className="font-bold">Cash :</span>
+                              <span>{formatAmountCommas(invoice.cash)}</span>
+                            </div>
+                            <div className="border-t border-slate-900 pt-1 flex justify-between text-slate-900">
+                              <span className="font-bold">Net Payable :</span>
+                              <span className="font-bold">{formatAmountCommas(totals.net - invoice.cash)}</span>
+                            </div>
+                          </>
+                        )}
 
-                        <div className="border-t-2 border-slate-900 pt-1.5 flex justify-between text-sm font-black text-slate-950">
+                        {invoice.bank > 0 && (
+                          <div className="flex justify-between text-slate-800">
+                            <span className="font-bold">Bank :</span>
+                            <span>{formatAmountCommas(invoice.bank)}</span>
+                          </div>
+                        )}
+
+                        {invoice.bkash > 0 && (
+                          <div className="flex justify-between text-slate-800">
+                            <span className="font-bold">bKash :</span>
+                            <span>{formatAmountCommas(invoice.bkash)}</span>
+                          </div>
+                        )}
+
+                        <div className="border-t border-slate-900 pt-1 flex justify-between text-sm font-black text-slate-950">
                           <span>Due :</span>
                           <span>{formatAmountCommas(totals.due)}</span>
                         </div>
@@ -545,26 +540,36 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                   </div>
                 )}
 
-                {/* 5. Four Dotted Signature Lines at Bottom */}
-                <div className="grid grid-cols-4 gap-4 mt-20 pt-4 text-center text-xs font-medium text-slate-900">
-                  <div>
-                    <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
-                    <span className="capitalize">{type === 'invoice' ? 'customer signature' : 'Customer Signature'}</span>
-                  </div>
-                  <div>
-                    <div className="font-mono text-[11px] font-bold text-slate-900 mb-0.5">
-                      {shop.preparedBy ? (shop.preparedBy.startsWith('#') ? shop.preparedBy : `#${shop.preparedBy}#`) : '#AnayeT#'}
+                {/* 5. Four Dotted Signature Lines at Bottom & Footer note */}
+                <div className="mt-20 pt-4">
+                  <div className="grid grid-cols-4 gap-4 text-center text-xs font-medium text-slate-900 items-end">
+                    <div>
+                      <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
+                      <span className="capitalize">{type === 'invoice' ? 'customer signature' : 'Customer Signature'}</span>
                     </div>
-                    <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
-                    <span>Prepared by</span>
+                    <div>
+                      {shop.preparedBy ? (
+                        <div className="text-[11px] font-bold text-slate-900 font-mono mb-0.5">
+                          #{shop.preparedBy}#
+                        </div>
+                      ) : (
+                        <div className="h-4"></div>
+                      )}
+                      <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
+                      <span>Prepared by</span>
+                    </div>
+                    <div>
+                      <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
+                      <span>Store incharge</span>
+                    </div>
+                    <div>
+                      <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
+                      <span>Authorised by</span>
+                    </div>
                   </div>
-                  <div>
-                    <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
-                    <span>Store incharge</span>
-                  </div>
-                  <div>
-                    <div className="border-b border-dotted border-slate-900 mb-1 mx-2"></div>
-                    <span>Authorised by</span>
+                  {/* Software developer line / footer text from shop config */}
+                  <div className="text-center text-[10px] text-slate-600 mt-2 font-sans">
+                    {shop.footerText || 'Software developed by ORS IT- 01732970999'}
                   </div>
                 </div>
               </div>
@@ -844,15 +849,24 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                 {/* 1. CUSTOMER TRANSACTION DETAIL PRINT (Matching transaction.jpg) */}
                 {reportData.reportType === 'customer_transaction' ? (
                   <div>
-                    <div className="text-center pb-2">
-                      <h1 className="text-2xl font-black uppercase tracking-wider text-slate-900">{shop.name}</h1>
-                      <p className="text-xs font-semibold text-slate-700 mt-0.5">{shop.address}</p>
-                      <p className="text-xs font-semibold text-slate-700">{shop.phones}</p>
+                    <div className="flex items-center justify-between pb-2">
+                      {shop.logoUrl ? (
+                        <img src={shop.logoUrl} alt="Logo" className="w-16 h-14 object-contain rounded shrink-0" />
+                      ) : (
+                        <div className="w-16 shrink-0"></div>
+                      )}
+                      <div className="text-center grow">
+                        <h1 className="text-2xl font-black uppercase tracking-wider text-slate-900">{shop.name || 'MOCCA TILES & FITTINGS'}</h1>
+                        <p className="text-xs font-semibold text-slate-700 mt-0.5">{shop.address}</p>
+                        <p className="text-xs font-semibold text-slate-700">{shop.phones}</p>
+                        {shop.web && <p className="text-[11px] text-slate-600">{shop.web}</p>}
+                      </div>
+                      <div className="w-16 shrink-0"></div>
+                    </div>
 
-                      <div className="my-3 flex justify-center">
-                        <div className="border border-slate-900 px-6 py-1 text-sm font-bold text-slate-900">
-                          ক্রেতা (Customer) Transaction Detail
-                        </div>
+                    <div className="my-2 flex justify-center">
+                      <div className="border border-slate-900 px-6 py-1 text-sm font-bold text-slate-900">
+                        ক্রেতা (Customer) Transaction Detail
                       </div>
                     </div>
 
@@ -929,11 +943,21 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                 ) : reportData.reportType === 'stock_report' ? (
                   /* 2. STOCK REPORT PRINT (Matching stock report.jpg) */
                   <div>
-                    <div className="text-center pb-1">
-                      <h1 className="text-2xl font-bold tracking-tight text-slate-900">{shop.name}</h1>
-                      <p className="text-xs font-semibold text-slate-700 mt-0.5">{shop.address}</p>
-                      <h2 className="text-base font-bold text-slate-900 mt-2">{reportData.supplierName}</h2>
-                      <p className="text-xs text-slate-600">Stock Date: {reportData.stockDate}</p>
+                    <div className="flex items-center justify-between pb-1">
+                      {shop.logoUrl ? (
+                        <img src={shop.logoUrl} alt="Logo" className="w-16 h-14 object-contain rounded shrink-0" />
+                      ) : (
+                        <div className="w-16 shrink-0"></div>
+                      )}
+                      <div className="text-center grow">
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{shop.name || 'MOCCA TILES & FITTINGS'}</h1>
+                        <p className="text-xs font-semibold text-slate-700 mt-0.5">{shop.address}</p>
+                        {shop.phones && <p className="text-xs font-semibold text-slate-700">{shop.phones}</p>}
+                        {shop.web && <p className="text-[11px] text-slate-600">{shop.web}</p>}
+                        <h2 className="text-base font-bold text-slate-900 mt-2">{reportData.supplierName}</h2>
+                        <p className="text-xs text-slate-600">Stock Date: {reportData.stockDate}</p>
+                      </div>
+                      <div className="w-16 shrink-0"></div>
                     </div>
 
                     <div className="flex justify-end text-[11px] text-slate-700 font-mono mb-1">
@@ -1014,6 +1038,21 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                 ) : (
                   /* 3. STANDARD REPORT VIEW */
                   <div>
+                    <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-300">
+                      {shop.logoUrl ? (
+                        <img src={shop.logoUrl} alt="Logo" className="w-16 h-14 object-contain rounded shrink-0" />
+                      ) : (
+                        <div className="w-16 shrink-0"></div>
+                      )}
+                      <div className="text-center grow">
+                        <h1 className="text-xl sm:text-2xl font-black uppercase text-slate-900">{shop.name || 'MOCCA TILES & FITTINGS'}</h1>
+                        <p className="text-xs text-slate-700">{shop.address}</p>
+                        <p className="text-xs text-slate-700">{shop.phones}</p>
+                        {shop.web && <p className="text-[11px] text-slate-600">{shop.web}</p>}
+                      </div>
+                      <div className="w-16 shrink-0"></div>
+                    </div>
+
                     <div className="text-center mb-4">
                       <h2 className="text-xl font-bold uppercase tracking-wider text-slate-800 border-b-2 border-slate-700 inline-block px-4 pb-1">
                         {reportData.title}
@@ -1100,6 +1139,34 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                     )}
                   </div>
                 )}
+
+                {/* Report Signatures & Shop Footer Note */}
+                <div className="mt-12 pt-4">
+                  <div className="grid grid-cols-3 gap-4 text-center text-xs font-medium text-slate-900 items-end">
+                    <div>
+                      <div className="border-b border-dotted border-slate-800 mb-1 mx-4"></div>
+                      <span>Customer / Checker</span>
+                    </div>
+                    <div>
+                      {shop.preparedBy ? (
+                        <div className="text-[11px] font-bold text-slate-900 font-mono mb-0.5">
+                          #{shop.preparedBy}#
+                        </div>
+                      ) : (
+                        <div className="h-4"></div>
+                      )}
+                      <div className="border-b border-dotted border-slate-800 mb-1 mx-4"></div>
+                      <span>Prepared by</span>
+                    </div>
+                    <div>
+                      <div className="border-b border-dotted border-slate-800 mb-1 mx-4"></div>
+                      <span>Authorised by</span>
+                    </div>
+                  </div>
+                  <div className="text-center text-[10px] text-slate-600 mt-3 font-sans">
+                    {shop.footerText || 'Software developed by ORS IT- 01732970999'}
+                  </div>
+                </div>
               </div>
             )}
           </div>

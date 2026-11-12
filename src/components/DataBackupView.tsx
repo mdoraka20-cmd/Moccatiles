@@ -147,10 +147,12 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
             setMsg('ডাটা রিস্টোর সম্পন্ন হয়েছে!');
             setTimeout(() => setMsg(''), 4000);
           } else {
-            alert('ভুল ফাইল ফরম্যাট। সঠিক JSON ফাইল প্রদান করুন।');
+            setMsg('❌ ভুল ফাইল ফরম্যাট। সঠিক JSON ফাইল প্রদান করুন।');
+            setTimeout(() => setMsg(''), 4000);
           }
         } catch {
-          alert('ফাইল পড়তে সমস্যা হয়েছে।');
+          setMsg('❌ ফাইল পড়তে সমস্যা হয়েছে।');
+          setTimeout(() => setMsg(''), 4000);
         }
       };
       reader.readAsText(file);
@@ -158,12 +160,10 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
   };
 
   const handleResetToSample = () => {
-    if (confirm('আপনি কি টেস্ট নমুনা ডাটায় ফিরে যেতে চান? বর্তমান সকল ডাটা প্রতিস্থাপিত হবে।')) {
-      StorageService.resetToDefaults();
-      onDataReload();
-      setMsg('নমুনা ডাটা সেট করা হয়েছে!');
-      setTimeout(() => setMsg(''), 4000);
-    }
+    StorageService.resetToDefaults();
+    onDataReload();
+    setMsg('ডিফল্ট নমুনা ডাটা সফলভাবে সেট করা হয়েছে!');
+    setTimeout(() => setMsg(''), 4000);
   };
 
   return (

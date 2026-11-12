@@ -142,9 +142,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     if (onRequireAdminAuth) {
       onRequireAdminAuth(`ভেন্ডর / ব্র্যান্ড '${vendorName}' মুছে ফেলা`, executeDelete, warningText);
     } else {
-      if (confirm(warningText)) {
-        executeDelete();
-      }
+      executeDelete();
     }
   };
 
@@ -203,9 +201,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
     if (onRequireAdminAuth) {
       onRequireAdminAuth(`ক্যাটাগরি '${catName}' মুছে ফেলা`, executeDelete, warningText);
     } else {
-      if (confirm(warningText)) {
-        executeDelete();
-      }
+      executeDelete();
     }
   };
 
@@ -331,9 +327,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
         `PID: #${selectedProd.id} | কোড: ${selectedProd.code} | ব্র্যান্ড: ${selectedProd.vendor || '—'} | গ্রেড: Grade ${selectedProd.grade || 'A'}`
       );
     } else {
-      if (confirm(`পণ্য '${selectedProd.name}' মুছবেন? (পুরাতন বিলে অপরিবর্তিত থাকবে)`)) {
-        executeDelete();
-      }
+      executeDelete();
     }
   };
 
@@ -845,6 +839,7 @@ export const ProductView: React.FC<ProductViewProps> = ({
                 <th className="p-2 text-right w-16">Qty/Pack</th>
                 <th className="p-2 text-right w-20">Sales Price</th>
                 <th className="p-2 text-right w-24">বর্তমান স্টক</th>
+                <th className="p-2 text-center w-12">মুছুন</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -908,12 +903,41 @@ export const ProductView: React.FC<ProductViewProps> = ({
                         {p.isTile ? `${(p.stockSft || 0).toFixed(1)} sft` : `${p.stockPiece || 0} pcs`}
                       </div>
                     </td>
+                    <td className="p-2 text-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const executeDelete = () => {
+                            onDeleteProduct(p.id);
+                            if (selectedProd?.id === p.id) {
+                              handleNew();
+                            }
+                          };
+                          if (currentUser?.role === 'admin') {
+                            executeDelete();
+                          } else if (onRequireAdminAuth) {
+                            onRequireAdminAuth(
+                              `পণ্য '${p.name}' মুছে ফেলা`,
+                              executeDelete,
+                              `আইডি: #${p.id} | কোড: ${p.code}`
+                            );
+                          } else {
+                            executeDelete();
+                          }
+                        }}
+                        title={currentUser?.role === 'admin' ? 'সরাসরি পণ্য মুছুন (Admin Delete)' : 'এডমিন পারমিশন নিয়ে মুছুন'}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-400">
+                  <td colSpan={11} className="p-8 text-center text-slate-400">
                     কোনো পণ্য খুঁজে পাওয়া যায়নি
                   </td>
                 </tr>

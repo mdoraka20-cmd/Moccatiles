@@ -245,11 +245,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     }
     const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
     if (statusObj.isFullyDelivered) {
-      alert('এই চালানের সমস্ত মাল ইতিমধ্যে ডেলিভারি সম্পন্ন হয়েছে!');
-      return;
-    }
-
-    if (!confirm(`চালান #${inv.no} এর সকল অবশিষ্ট পণ্য ১-ক্লিকে ফুল ডেলিভারি নিশ্চিত করবেন?`)) {
       return;
     }
 
