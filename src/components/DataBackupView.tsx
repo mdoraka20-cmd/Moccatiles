@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Customer, Invoice, Payment, Product, ShopConfig, Txn } from '../types';
 import { StorageService } from '../services/storage';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import { Database, Download, Upload, RefreshCw, AlertTriangle, Check, FileCode } from 'lucide-react';
 
 interface DataBackupViewProps {
@@ -134,17 +135,18 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
     document.body.removeChild(link);
   };
 
-  // JSON import
+  // JSON import (syncs to both local storage and Firestore cloud)
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) {
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
-          const success = StorageService.importFromJSON(reader.result as string);
+          const success = await FirestoreSyncService.syncFullRestoreFromJSON(reader.result as string);
           if (success) {
             onDataReload();
-            setMsg('ডাটা রিস্টোর সম্পন্ন হয়েছে!');
+            setMsg('ডাটা রিস্টোর ও ক্লাউড সিঙ্ক সম্পন্ন হয়েছে!');
             setTimeout(() => setMsg(''), 4000);
           } else {
             setMsg('❌ ভুল ফাইল ফরম্যাট। সঠিক JSON ফাইল প্রদান করুন।');
@@ -167,9 +169,9 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-4 text-xs">
-      <div className="bg-white border border-slate-300 rounded-lg p-5 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+    <div className="p-3 sm:p-6 max-w-4xl mx-auto space-y-4 text-xs">
+      <div className="bg-white border border-slate-300 rounded-lg p-4 sm:p-5 shadow-2xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-emerald-700" />
             <h3 className="font-bold text-sm text-slate-800">
@@ -272,7 +274,7 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
         </div>
 
         {/* Section 3: Reset / Seed demo */}
-        <div className="border border-amber-200 rounded-lg p-4 bg-amber-50/40 flex items-center justify-between">
+        <div className="border border-amber-200 rounded-lg p-4 bg-amber-50/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
             <h4 className="font-bold text-amber-950 text-xs">নমুনা ডেমো ডাটা রিসেট (Sample Demo Data)</h4>
             <p className="text-[11px] text-amber-800 mt-0.5">

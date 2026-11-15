@@ -818,7 +818,8 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
 
             {/* Added stock in items table */}
             <div className="border border-slate-300 rounded-lg overflow-hidden">
-              <table className="w-full text-xs text-left border-collapse">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] text-xs text-left border-collapse">
                 <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
                   <tr>
                     <th className="p-2 text-center w-8">SL</th>
@@ -861,7 +862,8 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                     </tr>
                   )}
                 </tbody>
-              </table>
+                </table>
+              </div>
 
               {stockInItems.length > 0 && (
                 <div className="p-3 bg-slate-100 border-t border-slate-300 flex justify-between items-center text-xs font-mono font-bold text-slate-900">
@@ -900,7 +902,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
           </div>
 
           <div className="overflow-x-auto max-h-[520px]">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="w-full min-w-[700px] text-xs text-left border-collapse">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
                 <tr>
                   <th className="p-2 text-center w-16">PID</th>
@@ -975,7 +977,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
           </div>
 
           <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-xs text-left border-collapse">
+            <table className="w-full min-w-[720px] text-xs text-left border-collapse">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
                 <tr>
                   <th className="p-2 text-center w-28">Challan No</th>

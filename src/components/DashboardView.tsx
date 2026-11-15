@@ -256,7 +256,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="overflow-x-auto flex-1">
-            <table className="w-full text-xs text-left">
+            <table className="w-full min-w-[580px] text-xs text-left">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                 <tr>
                   <th className="p-2.5 text-center">Invoice No</th>
@@ -381,16 +381,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Local Data Storage Status footer matching Billing.cs */}
-      <div className="bg-slate-100 border border-slate-200 rounded-md p-2.5 text-xs text-slate-600 flex items-center justify-between">
+      <div className="bg-slate-100 border border-slate-200 rounded-md p-2.5 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium">
-          ডাটা সংরক্ষিত আছে (লোকাল ব্রাউজার স্টোরেজ / TSV কম্প্যাটিবল): <span className="font-mono font-semibold text-slate-800">D:\InventoryBillingData</span>
+          ক্লাউড সিঙ্ক ও লোকাল স্টোরেজ সক্রিয়
         </span>
         <button
           onClick={() => onNavigate('data_backup')}
           className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold underline cursor-pointer"
         >
-          ব্যাকআপ / এক্সপোর্ট করুন
+          ব্যাকআপ / রিস্টোর করুন
         </button>
       </div>
     </div>

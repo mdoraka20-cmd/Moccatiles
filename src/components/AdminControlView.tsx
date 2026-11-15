@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AppUser, Customer, DealerDeal, Invoice, UserRole, StaffPermissions } from '../types';
+import React, { useState, useEffect } from 'react';
+import { AppUser, Customer, DealerDeal, Invoice, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
 import { StorageService, defaultStaffPermissions } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import {
@@ -21,12 +21,20 @@ import {
   Phone,
   FileText,
   Truck,
+  Database,
+  Download,
+  Upload,
 } from 'lucide-react';
 
 interface AdminControlViewProps {
   currentUser: AppUser;
   invoices: Invoice[];
   customers: Customer[];
+  users?: AppUser[];
+  dealers?: DealerDeal[];
+  products?: Product[];
+  payments?: Payment[];
+  txns?: Txn[];
   onDataChanged: () => void;
 }
 
@@ -34,12 +42,17 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   currentUser,
   invoices,
   customers,
+  users: propUsers,
+  dealers: propDealers,
+  products: propProducts,
+  payments: propPayments,
+  txns: propTxns,
   onDataChanged,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'data_control'>('users');
 
-  // Users State
-  const [users, setUsers] = useState<AppUser[]>(() => StorageService.getUsers());
+  // Users State (always synchronized with live Firestore updates)
+  const [users, setUsers] = useState<AppUser[]>(() => (propUsers && propUsers.length > 0 ? propUsers : StorageService.getUsers()));
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
   const [userLogin, setUserLogin] = useState('');
@@ -49,7 +62,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   const [userStatusMsg, setUserStatusMsg] = useState('');
 
   // Deals State
-  const [dealers, setDealers] = useState<DealerDeal[]>(() => StorageService.getDealers());
+  const [dealers, setDealers] = useState<DealerDeal[]>(() => (propDealers ? propDealers : StorageService.getDealers()));
   const [dealSearch, setDealSearch] = useState('');
   const [editingDealId, setEditingDealId] = useState<number | null>(null);
   const [dealName, setDealName] = useState('');
@@ -65,6 +78,35 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   // Staff Permissions Management State
   const [staffPerms, setStaffPerms] = useState<StaffPermissions>(() => StorageService.getStaffPermissions());
   const [permsStatusMsg, setPermsStatusMsg] = useState('');
+
+  // Data Control (Backup, Restore & Delete) State
+  const [dataStatusMsg, setDataStatusMsg] = useState('');
+  const [dataErrorMsg, setDataErrorMsg] = useState('');
+  const [isDataBusy, setIsDataBusy] = useState(false);
+  const [selectedDeleteTargets, setSelectedDeleteTargets] = useState<string[]>([]);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    isOpen: boolean;
+    targets: string[];
+    title: string;
+    description: string;
+  }>({
+    isOpen: false,
+    targets: [],
+    title: '',
+    description: '',
+  });
+
+  useEffect(() => {
+    if (propUsers && propUsers.length > 0) {
+      setUsers(propUsers);
+    }
+  }, [propUsers]);
+
+  useEffect(() => {
+    if (propDealers) {
+      setDealers(propDealers);
+    }
+  }, [propDealers]);
 
   const handleTogglePerm = (key: keyof StaffPermissions) => {
     setStaffPerms((prev) => ({
@@ -343,27 +385,119 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     );
   }
 
+  // ---------------- DATA CONTROL (BACKUP, RESTORE & DELETE) ----------------
+  const handleAdminExportBackup = () => {
+    setDataErrorMsg('');
+    const jsonStr = StorageService.exportAllAsJSON();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `MoccaTiles_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setDataStatusMsg('সম্পূর্ণ ডাটাবেস ব্যাকআপ ফাইল ডাউনলোড সম্পন্ন হয়েছে!');
+    setTimeout(() => setDataStatusMsg(''), 4000);
+  };
+
+  const handleAdminRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      setIsDataBusy(true);
+      setDataErrorMsg('');
+      setDataStatusMsg('');
+      try {
+        const ok = await FirestoreSyncService.syncFullRestoreFromJSON(reader.result as string);
+        if (ok) {
+          onDataChanged();
+          setDataStatusMsg('ডাটা সফলভাবে রিস্টোর ও ক্লাউডে সিঙ্ক হয়েছে! সকল ইউজার নতুন ডাটা দেখতে পাবে।');
+          setTimeout(() => setDataStatusMsg(''), 5000);
+        } else {
+          setDataErrorMsg('ভুল ব্যাকআপ ফাইল। সঠিক JSON ব্যাকআপ ফাইল নির্বাচন করুন।');
+        }
+      } catch {
+        setDataErrorMsg('ফাইল রিস্টোর করতে সমস্যা হয়েছে। পুনরায় চেষ্টা করুন।');
+      } finally {
+        setIsDataBusy(false);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const toggleDeleteTarget = (key: string) => {
+    setSelectedDeleteTargets((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  };
+
+  const openConfirmDeleteModal = (targets: string[], title: string, description: string) => {
+    setDeleteConfirmModal({
+      isOpen: true,
+      targets,
+      title,
+      description,
+    });
+  };
+
+  const executeConfirmedDelete = async () => {
+    const targets = deleteConfirmModal.targets;
+    if (targets.length === 0) return;
+
+    setIsDataBusy(true);
+    setDataErrorMsg('');
+    setDataStatusMsg('');
+    try {
+      await FirestoreSyncService.syncClearCollections(targets);
+      onDataChanged();
+      setSelectedDeleteTargets([]);
+      setDeleteConfirmModal({ isOpen: false, targets: [], title: '', description: '' });
+      setDataStatusMsg('নির্বাচিত ডাটা সফলভাবে স্থায়ীভাবে মুছে ফেলা হয়েছে এবং ক্লাউডে সিঙ্ক হয়েছে।');
+      setTimeout(() => setDataStatusMsg(''), 5000);
+    } catch {
+      setDataErrorMsg('ডাটা ডিলিট করতে সমস্যা হয়েছে।');
+    } finally {
+      setIsDataBusy(false);
+    }
+  };
+
+  const deleteCatalogOptions: Array<{ key: string; label: string; count: number; desc: string }> = [
+    { key: 'invoices', label: 'বিক্রয় চালান / মেমু (Invoices)', count: invoices.length, desc: 'সকল বিক্রয়ের বিল ও মেমু' },
+    { key: 'payments', label: 'টাকা জমার রশিদ (Pay Receipts)', count: (propPayments || StorageService.getPayments()).length, desc: 'সকল ক্রেতার জমা রশিদ' },
+    { key: 'txns', label: 'আয়-ব্যয় হিসাব (Income/Expense)', count: (propTxns || StorageService.getTxns()).length, desc: 'দোকানের সকল খরচ ও আয় এন্ট্রি' },
+    { key: 'stockInRecords', label: 'স্টক ইন রেকর্ড (Stock In)', count: StorageService.getStockInRecords().length, desc: 'ভেন্ডর ক্রয় ও স্টক ইন ইতিহাস' },
+    { key: 'deliveryChallans', label: 'ডেলিভারি চালান (Delivery Challans)', count: StorageService.getDeliveryChallans().length, desc: 'ট্রিপ ভিত্তিক মাল ডেলিভারি রেকর্ড' },
+    { key: 'customers', label: 'গ্রাহক তালিকা (Customers)', count: customers.length, desc: 'সকল কাস্টমার প্রোফাইল' },
+    { key: 'products', label: 'পণ্য ও স্টক (Products)', count: (propProducts || StorageService.getProducts()).length, desc: 'সকল পণ্য ক্যাটালগ ও স্টক' },
+    { key: 'dealers', label: 'ডিলার মাস্টার (Dealers)', count: dealers.length, desc: 'সংরক্ষিত ডিল ও রেফারেন্স তালিকা' },
+  ];
+
   return (
-    <div className="flex flex-col h-[calc(100vh-85px)] bg-slate-100 overflow-hidden text-xs">
+    <div className="flex flex-col min-h-[calc(100vh-85px)] lg:h-[calc(100vh-85px)] bg-slate-100 lg:overflow-hidden text-xs">
       {/* Top Banner */}
-      <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-slate-800">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-amber-600 rounded-md">
+      <div className="bg-slate-900 text-white px-3 sm:px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-slate-800">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1.5 bg-amber-600 rounded-md shrink-0">
             <ShieldCheck className="w-4 h-4 text-white" />
           </div>
-          <div>
-            <h2 className="font-bold text-sm tracking-wide text-slate-100">
-              এডমিন কন্ট্রোল ও ডিল মাস্টার (Admin Security & Master Directory)
+          <div className="min-w-0">
+            <h2 className="font-bold text-xs sm:text-sm tracking-wide text-slate-100 truncate">
+              এডমিন কন্ট্রোল ও ডিল মাস্টার
             </h2>
-            <p className="text-[10px] text-slate-400">
-              User Management, Dealer Deal Directory & Role-Based Access Control
+            <p className="text-[10px] text-slate-400 truncate">
+              ইউজার, ডিল মাস্টার, পারমিশন ও ডাটা ব্যাকআপ/ডিলেট
             </p>
           </div>
         </div>
 
         {/* Current User Badge */}
-        <div className="flex items-center gap-2 bg-slate-800/80 px-3 py-1 rounded-lg border border-slate-700">
-          <span className="text-slate-400">লগিন ইউজার:</span>
+        <div className="flex items-center gap-2 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 shrink-0">
+          <span className="text-slate-400 hidden sm:inline">লগিন ইউজার:</span>
           <span className="font-bold text-amber-300">{currentUser.name}</span>
           <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[10px] font-mono uppercase">
             {currentUser.role}
@@ -372,10 +506,10 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       </div>
 
       {/* Sub Navigation Bar */}
-      <div className="bg-slate-800 px-4 py-1.5 flex items-center gap-2 border-b border-slate-700">
+      <div className="bg-slate-800 px-3 sm:px-4 py-1.5 flex items-center gap-2 border-b border-slate-700 overflow-x-auto">
         <button
           onClick={() => setActiveSubTab('users')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
             activeSubTab === 'users'
               ? 'bg-amber-600 text-white shadow-xs'
               : 'text-slate-300 hover:bg-slate-700'
@@ -386,7 +520,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
         </button>
         <button
           onClick={() => setActiveSubTab('deals')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
             activeSubTab === 'deals'
               ? 'bg-amber-600 text-white shadow-xs'
               : 'text-slate-300 hover:bg-slate-700'
@@ -397,14 +531,25 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
         </button>
         <button
           onClick={() => setActiveSubTab('permissions')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
             activeSubTab === 'permissions'
               ? 'bg-amber-600 text-white shadow-xs'
               : 'text-slate-300 hover:bg-slate-700'
           }`}
         >
           <Lock className="w-3.5 h-3.5" />
-          ভূমিকা ও অনুমতি (Role Permissions)
+          ভূমিকা ও অনুমতি
+        </button>
+        <button
+          onClick={() => setActiveSubTab('data_control')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
+            activeSubTab === 'data_control'
+              ? 'bg-rose-700 text-white shadow-xs'
+              : 'text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5" />
+          ডাটা ব্যাকআপ, রিস্টোর ও ডিলেট
         </button>
       </div>
 
@@ -1117,7 +1262,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
             </div>
 
             {/* Bottom Save Bar */}
-            <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 flex justify-between items-center">
+            <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <span className="text-slate-600 text-xs font-semibold">
                 যেকোনো পারমিশন পরিবর্তন করার পর ডানপাশের বাটনে ক্লিক করে সংরক্ষণ করুন।
               </span>
@@ -1132,7 +1277,203 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
             </div>
           </div>
         )}
+
+        {/* ================= 4. DATA BACKUP, RESTORE & DELETE SUBTAB ================= */}
+        {activeSubTab === 'data_control' && (
+          <div className="space-y-4 max-w-5xl mx-auto">
+            {(dataStatusMsg || dataErrorMsg) && (
+              <div
+                className={`p-3 rounded-lg border font-semibold text-xs flex items-center justify-between ${
+                  dataErrorMsg
+                    ? 'bg-rose-50 border-rose-300 text-rose-800'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                }`}
+              >
+                <span>{dataErrorMsg || dataStatusMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDataStatusMsg('');
+                    setDataErrorMsg('');
+                  }}
+                  className="text-xs font-bold px-2 py-0.5 rounded hover:bg-black/5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Backup & Restore Card */}
+            <div className="bg-white rounded-lg border border-slate-300 p-4 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-700" />
+                    সম্পূর্ণ ডাটা ব্যাকআপ ও রিস্টোর (Cloud + Local Backup & Restore)
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    ব্যাকআপ রিস্টোর করলে স্বয়ংক্রিয়ভাবে ক্লাউড ডাটাবেসেও আপডেট হবে, যাতে সব ইউজার ও ডিভাইস সাথে সাথে আপডেট ডাটা পায়।
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={isDataBusy}
+                  onClick={handleAdminExportBackup}
+                  className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-lg font-bold cursor-pointer transition shadow-xs flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  সম্পূর্ণ ব্যাকআপ ডাউনলোড করুন (JSON)
+                </button>
+
+                <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold cursor-pointer transition shadow-xs flex items-center gap-2">
+                  <Upload className="w-4 h-4" />
+                  {isDataBusy ? 'প্রসেস হচ্ছে...' : 'ব্যাকআপ ফাইল থেকে রিস্টোর করুন'}
+                  <input
+                    type="file"
+                    accept=".json"
+                    disabled={isDataBusy}
+                    onChange={handleAdminRestoreBackup}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Selective & Full Data Delete Card */}
+            <div className="bg-white rounded-lg border border-rose-300 p-4 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-rose-200">
+                <div>
+                  <h3 className="font-bold text-sm text-rose-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    ডাটা ডিলিট কন্ট্রোল (Selective & Full Data Delete)
+                  </h3>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    প্রয়োজন অনুযায়ী নির্দিষ্ট বিভাগের ডাটা অথবা সম্পূর্ণ ব্যবসার ডাটা স্থায়ীভাবে মুছে ফেলুন (ইউজার একাউন্ট অক্ষুণ্ণ থাকবে)।
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {deleteCatalogOptions.map((opt) => {
+                  const isChecked = selectedDeleteTargets.includes(opt.key);
+                  return (
+                    <label
+                      key={opt.key}
+                      className={`p-3 rounded-lg border cursor-pointer transition flex items-start justify-between gap-2 ${
+                        isChecked
+                          ? 'bg-rose-50 border-rose-500 shadow-2xs'
+                          : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 text-xs">{opt.label}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{opt.desc}</div>
+                        <div className="mt-1 font-mono font-bold text-slate-700 text-[11px]">
+                          মোট রেকর্ড: {opt.count}
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleDeleteTarget(opt.key)}
+                        className="w-4 h-4 mt-0.5 accent-rose-600 cursor-pointer shrink-0"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <button
+                  type="button"
+                  disabled={selectedDeleteTargets.length === 0 || isDataBusy}
+                  onClick={() =>
+                    openConfirmDeleteModal(
+                      selectedDeleteTargets,
+                      'নির্বাচিত ডাটা স্থায়ীভাবে মুছে ফেলুন',
+                      `আপনি নির্বাচিত ${selectedDeleteTargets.length} টি বিভাগের সকল ডাটা মুছে ফেলতে যাচ্ছেন। এই কাজটি আর ফিরিয়ে আনা যাবে না।`
+                    )
+                  }
+                  className="px-4 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-bold cursor-pointer transition flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  নির্বাচিত ডাটা মুছুন ({selectedDeleteTargets.length})
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isDataBusy}
+                  onClick={() =>
+                    openConfirmDeleteModal(
+                      ['all'],
+                      'সম্পূর্ণ ব্যবসার ডাটা মুছুন (Full Data Wipe)',
+                      'সতর্কতা: এর ফলে সকল চালান, জমা, আয়-ব্যয়, স্টক-ইন, ডেলিভারি চালান, ক্রেতা, পণ্য ও ডিলার তথ্য স্থায়ীভাবে মুছে যাবে। শুধুমাত্র ইউজার লগিন একাউন্ট থাকবে। আগে ব্যাকআপ ডাউনলোড করে নেওয়ার পরামর্শ দেওয়া হলো।'
+                    )
+                  }
+                  className="px-4 py-2.5 bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white rounded-lg font-bold cursor-pointer transition flex items-center justify-center gap-2"
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  সকল ব্যবসার ডাটা মুছুন (Full Wipe)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Delete Confirmation Modal (In-App, No window.confirm) */}
+      {deleteConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-rose-300 overflow-hidden text-xs">
+            <div className="bg-rose-900 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <h3 className="font-bold text-sm">{deleteConfirmModal.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setDeleteConfirmModal({ isOpen: false, targets: [], title: '', description: '' })
+                }
+                className="text-rose-200 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-slate-700 leading-relaxed font-medium">
+                {deleteConfirmModal.description}
+              </p>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  disabled={isDataBusy}
+                  onClick={() =>
+                    setDeleteConfirmModal({ isOpen: false, targets: [], title: '', description: '' })
+                  }
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                >
+                  বাতিল করুন
+                </button>
+                <button
+                  type="button"
+                  disabled={isDataBusy}
+                  onClick={executeConfirmedDelete}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white rounded font-bold cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {isDataBusy ? 'মুছে ফেলা হচ্ছে...' : 'হ্যাঁ, স্থায়ীভাবে মুছে ফেলুন'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Batch Deal Rename Modal */}
       {renameModalOpen && targetDealForRename && (

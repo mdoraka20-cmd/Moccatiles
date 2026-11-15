@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Customer, Payment } from '../types';
 import { StorageService } from '../services/storage';
-import { formatMoney, parseNum, formatDateTimeBangla } from '../utils/numberWords';
-import { Receipt, Search, Printer, Trash2, Check, UserCheck } from 'lucide-react';
+import { formatMoney, parseNum } from '../utils/numberWords';
+import { Receipt, Search, Printer, Trash2, Check, RotateCcw, X } from 'lucide-react';
+
+const getTodayLocalDateStr = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
 
 interface PayReceiptViewProps {
   customers: Customer[];
@@ -30,11 +38,17 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
   onRequireAdminAuth,
 }) => {
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
-  const [payDate, setPayDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [payDate, setPayDate] = useState<string>(() => getTodayLocalDateStr());
   const [amount, setAmount] = useState<string>('');
   const [method, setMethod] = useState<'Cash' | 'Bank' | 'Bkash'>('Cash');
   const [remark, setRemark] = useState<string>('');
   const [selectedPay, setSelectedPay] = useState<Payment | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Payment history date range filter (defaults to current date so today's receipts appear automatically)
+  const [filterDateFrom, setFilterDateFrom] = useState<string>(() => getTodayLocalDateStr());
+  const [filterDateTo, setFilterDateTo] = useState<string>(() => getTodayLocalDateStr());
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // If customer came from picker
   React.useEffect(() => {
@@ -46,14 +60,43 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
 
   const currentDue = selectedCust ? StorageService.getCustomerBalance(selectedCust.id) : 0;
 
+  const filteredPayments = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return payments.filter((p) => {
+      const d = (p.date || '').trim().slice(0, 10);
+      let inDateRange = true;
+      if (filterDateFrom && filterDateTo) {
+        const startD = filterDateFrom <= filterDateTo ? filterDateFrom : filterDateTo;
+        const endD = filterDateFrom <= filterDateTo ? filterDateTo : filterDateFrom;
+        inDateRange = d >= startD && d <= endD;
+      } else if (filterDateFrom) {
+        inDateRange = d >= filterDateFrom;
+      } else if (filterDateTo) {
+        inDateRange = d <= filterDateTo;
+      }
+      const matchesSearch =
+        !q ||
+        String(p.id).includes(q) ||
+        p.custName.toLowerCase().includes(q) ||
+        (p.method || '').toLowerCase().includes(q) ||
+        (p.remark || '').toLowerCase().includes(q);
+      return inDateRange && matchesSearch;
+    });
+  }, [payments, filterDateFrom, filterDateTo, searchQuery]);
+
+  const filteredTotalAmount = useMemo(
+    () => filteredPayments.reduce((s, p) => s + (p.amount || 0), 0),
+    [filteredPayments]
+  );
+
   const handleSave = (print: boolean) => {
     if (!selectedCust) {
-      alert('গ্রাহক বাছাই করুন।');
+      setStatusMsg({ text: 'গ্রাহক বাছাই করুন।', type: 'error' });
       return;
     }
     const amtVal = parseNum(amount);
     if (amtVal <= 0) {
-      alert('জমার সঠিক পরিমাণ দিন।');
+      setStatusMsg({ text: 'জমার সঠিক পরিমাণ দিন।', type: 'error' });
       return;
     }
 
@@ -70,6 +113,8 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     onSavePayment(newPayment, print);
     setAmount('');
     setRemark('');
+    setStatusMsg({ text: `রশিদ #${newPayment.id} সফলভাবে সংরক্ষিত হয়েছে!`, type: 'success' });
+    setTimeout(() => setStatusMsg(null), 4000);
   };
 
   return (
@@ -173,8 +218,24 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
           </div>
         </div>
 
+        {/* Status message */}
+        {statusMsg && (
+          <div
+            className={`rounded px-3 py-1.5 text-[11px] font-semibold flex items-center justify-between gap-2 border ${
+              statusMsg.type === 'error'
+                ? 'bg-rose-50 border-rose-300 text-rose-800'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+            }`}
+          >
+            <span>{statusMsg.text}</span>
+            <button type="button" onClick={() => setStatusMsg(null)} className="cursor-pointer opacity-70 hover:opacity-100">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Action Buttons */}
-        <div className="flex items-center gap-3 pt-2 border-t border-slate-200">
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200">
           <button
             onClick={() => handleSave(false)}
             className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
@@ -194,13 +255,94 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
 
       {/* Payments History Table */}
       <div className="bg-white border border-slate-300 rounded-lg shadow-2xs overflow-hidden">
-        <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-          <h4 className="font-bold text-slate-800 text-xs">টাকা জমার ইতিহাস (Recent Payment Receipts)</h4>
-          <span className="text-slate-500 font-medium">মোট রশিদ: {payments.length} টি</span>
+        <div className="p-3 bg-slate-50 border-b border-slate-200 space-y-2.5">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <h4 className="font-bold text-slate-800 text-xs">
+              টাকা জমার ইতিহাস (Payment Receipts)
+            </h4>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-slate-600 font-semibold">রশিদ: {filteredPayments.length} টি</span>
+              <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                মোট জমা: ৳ {formatMoney(filteredTotalAmount)}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="রশিদ নং, গ্রাহক, মাধ্যম বা মন্তব্য দিয়ে খুঁজুন..."
+                className="w-full bg-white border border-slate-300 rounded pl-8 pr-2 py-1 text-xs text-slate-800"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-slate-600 font-semibold">From:</span>
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="bg-white border border-slate-300 rounded px-1.5 py-1 font-mono text-[11px]"
+              />
+              <span className="text-slate-600 font-semibold">To:</span>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="bg-white border border-slate-300 rounded px-1.5 py-1 font-mono text-[11px]"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const today = getTodayLocalDateStr();
+                  setFilterDateFrom(today);
+                  setFilterDateTo(today);
+                }}
+                className={`px-2 py-1 rounded font-bold text-[10px] border cursor-pointer transition ${
+                  filterDateFrom === getTodayLocalDateStr() && filterDateTo === getTodayLocalDateStr()
+                    ? 'bg-emerald-700 text-white border-emerald-700'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                আজকের
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterDateFrom('');
+                  setFilterDateTo('');
+                }}
+                className={`px-2 py-1 rounded font-bold text-[10px] border cursor-pointer transition ${
+                  !filterDateFrom && !filterDateTo
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                সব তারিখ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const today = getTodayLocalDateStr();
+                  setSearchQuery('');
+                  setFilterDateFrom(today);
+                  setFilterDateTo(today);
+                }}
+                title="আজকের তারিখে রিসেট করুন"
+                className="p-1 text-slate-600 hover:text-slate-900 border border-slate-300 rounded bg-white cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto max-h-[380px]">
-          <table className="w-full text-xs text-left border-collapse">
+          <table className="w-full min-w-[600px] text-xs text-left border-collapse">
             <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
               <tr>
                 <th className="p-2 text-center w-16">Receipt</th>
@@ -213,7 +355,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {payments.map((p) => {
+              {filteredPayments.map((p) => {
                 const isSelected = selectedPay?.id === p.id;
                 return (
                   <tr
@@ -271,10 +413,12 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                   </tr>
                 );
               })}
-              {payments.length === 0 && (
+              {filteredPayments.length === 0 && (
                 <tr>
                   <td colSpan={7} className="p-6 text-center text-slate-400">
-                    কোনো জমা এন্ট্রি নেই
+                    {payments.length === 0
+                      ? 'কোনো জমা এন্ট্রি নেই'
+                      : 'নির্বাচিত তারিখে কোনো পেমেন্ট রশিদ পাওয়া যায়নি — পুরাতন রশিদ দেখতে From/To তারিখ পরিবর্তন করুন'}
                   </td>
                 </tr>
               )}

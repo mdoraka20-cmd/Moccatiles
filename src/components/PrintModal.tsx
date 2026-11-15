@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { Customer, DeliveryChallan, Invoice, Payment, ShopConfig, StockInRecord } from '../types';
 import { formatMoney, formatQty, inWords, formatDateBangla, formatDateTimeBangla } from '../utils/numberWords';
-import { Printer, X, Download, Truck, CheckCircle2 } from 'lucide-react';
+import { Printer, X, Truck, CheckCircle2 } from 'lucide-react';
 import { StorageService } from '../services/storage';
-import { printHtmlContent, downloadHtmlFile } from '../utils/printHelper';
+import { printHtmlContent } from '../utils/printHelper';
 
 interface PrintModalProps {
   type: 'invoice' | 'challan' | 'receipt' | 'report' | 'delivery_challan' | 'stock_in';
@@ -161,18 +161,11 @@ export const PrintModal: React.FC<PrintModalProps> = ({
       : `Report_${reportData?.title?.replace(/[^a-zA-Z0-9\u0980-\u09FF]/g, '_') || 'Print'}`;
   };
 
-  // Reliable print method for modern browsers and iframes
+  // Native print-only handler (no file download, no PDF button)
   const handlePrint = () => {
     if (!printableRef.current) return;
-    const { filename } = printHtmlContent(printableRef.current.innerHTML, getDocTitle());
-    setPrintNotice(`🖨️ প্রিন্ট ফাইলটি (${filename}) ডাউনলোড সম্পন্ন হয়েছে! ফাইলটিতে ক্লিক করলেই সরাসরি প্রিন্ট ও PDF উইন্ডো চলে আসবে।`);
-  };
-
-  // Direct download standalone HTML / PDF printable file
-  const handleDownloadDocument = () => {
-    if (!printableRef.current) return;
-    const filename = downloadHtmlFile(printableRef.current.innerHTML, getDocTitle());
-    setPrintNotice(`📥 ফাইলটি (${filename}) ডাউনলোড হয়েছে। অফলাইনে প্রিন্ট করতে পারবেন।`);
+    printHtmlContent(printableRef.current.innerHTML, getDocTitle());
+    setPrintNotice('প্রিন্ট ডায়ালগ চালু করা হয়েছে।');
   };
 
   const totals = invoice ? StorageService.getInvoiceTotals(invoice) : null;
@@ -182,13 +175,13 @@ export const PrintModal: React.FC<PrintModalProps> = ({
   const deliveryStatus = invoice ? StorageService.getInvoiceDeliveryStatus(invoice.no) : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-1.5 sm:p-4 backdrop-blur-xs">
       <div className="flex flex-col bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[96vh] overflow-hidden border border-slate-300">
         {/* Top Control Bar (Hidden on print) */}
-        <div className="print:hidden flex items-center justify-between px-4 py-2.5 bg-slate-800 text-white border-b border-slate-700">
-          <div className="flex items-center gap-2 font-medium text-sm">
-            <Printer className="w-4 h-4 text-emerald-400" />
-            <span className="font-semibold">
+        <div className="print:hidden flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-slate-800 text-white border-b border-slate-700">
+          <div className="flex items-center gap-2 font-medium text-xs sm:text-sm min-w-0">
+            <Printer className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="font-semibold truncate">
               {type === 'invoice' && `বিক্রয় চালান / ইনভয়েস প্রিভিউ (Invoice #${invoice?.no})`}
               {type === 'challan' && `ডেলিভারি চালান প্রিভিউ (Challan #${invoice?.no})`}
               {type === 'delivery_challan' && `ডেলিভারি ট্রিপ চালান (${deliveryChallan?.challanNo})`}
@@ -198,26 +191,19 @@ export const PrintModal: React.FC<PrintModalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              title="সরাসরি প্রিন্ট বা ব্রাউজার Save as PDF করুন"
+              title="সরাসরি প্রিন্ট করুন"
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold cursor-pointer shadow-sm transition active:scale-95"
             >
               <Printer className="w-4 h-4" />
-              প্রিন্ট বা PDF ডাউনলোড (Print / PDF)
-            </button>
-            <button
-              onClick={handleDownloadDocument}
-              title="ডকুমেন্ট ফাইল আকারে অফলাইনে ডাউনলোড করুন"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold cursor-pointer shadow-sm transition active:scale-95"
-            >
-              <Download className="w-4 h-4" />
-              ডাউনলোড (Download)
+              প্রিন্ট করুন (Print)
             </button>
             <button
               onClick={onClose}
               className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition cursor-pointer"
+              aria-label="বন্ধ করুন"
             >
               <X className="w-4 h-4" />
             </button>
@@ -226,7 +212,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
 
         {/* Action feedback banner */}
         {printNotice && (
-          <div className="bg-emerald-700 text-white px-4 py-2 text-xs font-medium flex items-center justify-between border-b border-emerald-800 shadow-inner">
+          <div className="print:hidden bg-emerald-700 text-white px-4 py-2 text-xs font-medium flex items-center justify-between border-b border-emerald-800 shadow-inner">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-300 shrink-0" />
               <span>{printNotice}</span>
@@ -241,7 +227,7 @@ export const PrintModal: React.FC<PrintModalProps> = ({
         )}
 
         {/* Printable Paper Canvas */}
-        <div className="overflow-y-auto p-4 sm:p-8 bg-slate-200 flex justify-center flex-1">
+        <div className="overflow-auto p-2 sm:p-8 bg-slate-200 flex justify-start sm:justify-center flex-1">
           <div
             ref={printableRef}
             id="printable-area"

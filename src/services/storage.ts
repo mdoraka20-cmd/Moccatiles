@@ -552,7 +552,7 @@ export class StorageService {
 
   static getCurrentUser(): AppUser {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      const data = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER);
       return data ? JSON.parse(data) : initialUsers[0]; // default admin
     } catch {
       return initialUsers[0];
@@ -560,22 +560,26 @@ export class StorageService {
   }
 
   static setCurrentUser(user: AppUser) {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+    sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
   }
 
   static isUserLoggedIn(): boolean {
     try {
-      return localStorage.getItem(STORAGE_KEYS.AUTH_SESSION) === 'true';
+      localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+      return sessionStorage.getItem(STORAGE_KEYS.AUTH_SESSION) === 'true';
     } catch {
       return false;
     }
   }
 
   static setAuthSession(isLoggedIn: boolean) {
+    localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
     if (isLoggedIn) {
-      localStorage.setItem(STORAGE_KEYS.AUTH_SESSION, 'true');
+      sessionStorage.setItem(STORAGE_KEYS.AUTH_SESSION, 'true');
     } else {
-      localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+      sessionStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
+      sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
     }
   }
 
@@ -996,6 +1000,9 @@ export class StorageService {
       users: this.getUsers(),
       stockInRecords: this.getStockInRecords(),
       deliveryChallans: this.getDeliveryChallans(),
+      categories: this.getCategories(),
+      vendors: this.getVendors(),
+      staffPermissions: this.getStaffPermissions(),
       exportedAt: new Date().toISOString(),
     };
     return JSON.stringify(data, null, 2);
@@ -1015,11 +1022,27 @@ export class StorageService {
       if (Array.isArray(data.users)) this.saveUsers(data.users);
       if (Array.isArray(data.stockInRecords)) this.saveStockInRecords(data.stockInRecords);
       if (Array.isArray(data.deliveryChallans)) this.saveDeliveryChallans(data.deliveryChallans);
+      if (Array.isArray(data.categories)) this.saveCategories(data.categories);
+      if (Array.isArray(data.vendors)) this.saveVendors(data.vendors);
+      if (data.staffPermissions) this.saveStaffPermissions(data.staffPermissions);
       return true;
     } catch (e) {
       console.error('Import failed', e);
       return false;
     }
+  }
+
+  // Clear selective collections locally (saves empty arrays so defaults don't resurrect)
+  static clearSelectiveData(targets: string[]) {
+    const wipeAll = targets.includes('all');
+    if (wipeAll || targets.includes('invoices')) this.saveInvoices([]);
+    if (wipeAll || targets.includes('payments')) this.savePayments([]);
+    if (wipeAll || targets.includes('txns')) this.saveTxns([]);
+    if (wipeAll || targets.includes('stockInRecords')) this.saveStockInRecords([]);
+    if (wipeAll || targets.includes('deliveryChallans')) this.saveDeliveryChallans([]);
+    if (wipeAll || targets.includes('customers')) this.saveCustomers([]);
+    if (wipeAll || targets.includes('products')) this.saveProducts([]);
+    if (wipeAll || targets.includes('dealers')) this.saveDealers([]);
   }
 
   // Reset to default sample data

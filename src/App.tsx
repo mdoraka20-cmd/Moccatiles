@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ActiveTab, AppUser, Customer, DeliveryChallan, Invoice, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
+import { ActiveTab, AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
 import { StorageService } from './services/storage';
 import { HeaderToolbar } from './components/HeaderToolbar';
 import { DashboardView } from './components/DashboardView';
@@ -78,6 +78,8 @@ export default function App() {
   const [invoices, setInvoices] = useState<Invoice[]>(() => StorageService.getInvoices());
   const [payments, setPayments] = useState<Payment[]>(() => StorageService.getPayments());
   const [txns, setTxns] = useState<Txn[]>(() => StorageService.getTxns());
+  const [users, setUsers] = useState<AppUser[]>(() => StorageService.getUsers());
+  const [dealers, setDealers] = useState<DealerDeal[]>(() => StorageService.getDealers());
 
   // Customer modal picker state
   const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
@@ -156,11 +158,25 @@ export default function App() {
       onInvoicesUpdate: (newInvs) => setInvoices(newInvs),
       onPaymentsUpdate: (newPays) => setPayments(newPays),
       onTxnsUpdate: (newTxns) => setTxns(newTxns),
+      onDealersUpdate: (newDealers) => setDealers(newDealers),
       onUsersUpdate: (newUsers) => {
-        const current = StorageService.getCurrentUser();
-        const matched = newUsers.find((u) => u.id === current.id);
-        if (matched) setCurrentUser(matched);
+        setUsers(newUsers);
+        if (StorageService.isUserLoggedIn()) {
+          const current = StorageService.getCurrentUser();
+          const matched = newUsers.find((u) => u.id === current.id);
+          if (matched) {
+            StorageService.setCurrentUser(matched);
+            setCurrentUser(matched);
+          } else {
+            StorageService.setAuthSession(false);
+            setIsAuthenticated(false);
+          }
+        }
       },
+      onStockInUpdate: () => refreshAllData(),
+      onDeliveriesUpdate: () => refreshAllData(),
+      onCategoriesUpdate: () => refreshAllData(),
+      onVendorsUpdate: () => refreshAllData(),
       onStaffPermsUpdate: (perms) => setStaffPermissions(perms),
     });
 
@@ -174,7 +190,11 @@ export default function App() {
     setInvoices(StorageService.getInvoices());
     setPayments(StorageService.getPayments());
     setTxns(StorageService.getTxns());
-    setCurrentUser(StorageService.getCurrentUser());
+    setUsers(StorageService.getUsers());
+    setDealers(StorageService.getDealers());
+    if (StorageService.isUserLoggedIn()) {
+      setCurrentUser(StorageService.getCurrentUser());
+    }
     setStaffPermissions(StorageService.getStaffPermissions());
   };
 
@@ -316,7 +336,7 @@ export default function App() {
 
   // If not logged in, show the dedicated separate Login Page
   if (!isAuthenticated) {
-    return <LoginPage shop={shop} onLoginSuccess={handleLoginSuccess} />;
+    return <LoginPage shop={shop} users={users} onLoginSuccess={handleLoginSuccess} />;
   }
 
   // Handle Tab Navigation with strict Role & Staff Permission checks
@@ -505,6 +525,11 @@ export default function App() {
             currentUser={currentUser}
             invoices={invoices}
             customers={customers}
+            users={users}
+            dealers={dealers}
+            products={products}
+            payments={payments}
+            txns={txns}
             onDataChanged={refreshAllData}
           />
         )}
@@ -564,6 +589,7 @@ export default function App() {
           isOpen={isLoginModalOpen}
           onClose={() => setIsLoginModalOpen(false)}
           currentUser={currentUser}
+          users={users}
           onLoginSuccess={(u) => {
             setCurrentUser(u);
           }}

@@ -7,6 +7,7 @@ interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: AppUser;
+  users?: AppUser[];
   onLoginSuccess: (user: AppUser) => void;
 }
 
@@ -14,6 +15,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  users: propUsers,
   onLoginSuccess,
 }) => {
   const [username, setUsername] = useState('');
@@ -23,7 +25,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   if (!isOpen) return null;
 
-  const users = StorageService.getUsers();
+  const users = propUsers && propUsers.length > 0 ? propUsers : StorageService.getUsers();
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();

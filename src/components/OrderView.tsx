@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Customer, DealerDeal, Invoice, Item, Product, ShopConfig, AppUser, StaffPermissions } from '../types';
 import { StorageService } from '../services/storage';
 import { formatMoney, formatQty, parseNum } from '../utils/numberWords';
@@ -42,6 +42,14 @@ interface OrderViewProps {
   onRequireAdminAuth?: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
 }
 
+const getTodayLocalDateStr = (): string => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export const OrderView: React.FC<OrderViewProps> = ({
   products,
   customers,
@@ -62,13 +70,63 @@ export const OrderView: React.FC<OrderViewProps> = ({
   // Order Header state
   const [editingNo, setEditingNo] = useState<number>(0);
   const [invoiceNo, setInvoiceNo] = useState<number>(0);
-  const [salesDate, setSalesDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [salesDate, setSalesDate] = useState<string>(() => getTodayLocalDateStr());
   const [custId, setCustId] = useState<string>('');
   const [custName, setCustName] = useState<string>('');
   const [address, setAddress] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [deal, setDeal] = useState<string>('');
   const [comment, setComment] = useState<string>('');
+
+  // Customer Name & Phone suggestion dropdowns
+  const [showCustNameSug, setShowCustNameSug] = useState<boolean>(false);
+  const [showCustPhoneSug, setShowCustPhoneSug] = useState<boolean>(false);
+  const custNameBoxRef = useRef<HTMLDivElement>(null);
+  const custPhoneBoxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (custNameBoxRef.current && !custNameBoxRef.current.contains(e.target as Node)) {
+        setShowCustNameSug(false);
+      }
+      if (custPhoneBoxRef.current && !custPhoneBoxRef.current.contains(e.target as Node)) {
+        setShowCustPhoneSug(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  const custNameMatches = useMemo(() => {
+    const q = custName.trim().toLowerCase();
+    if (!q) return [];
+    return customers.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [customers, custName]);
+
+  const custPhoneMatches = useMemo(() => {
+    const pQ = phone.trim().toLowerCase();
+    const nQ = custName.trim().toLowerCase();
+    if (!pQ && !nQ) return [];
+    return customers
+      .filter((c) => {
+        const phoneMatch = pQ ? (c.phone || '').toLowerCase().includes(pQ) : false;
+        const nameMatch = nQ ? c.name.toLowerCase().includes(nQ) : false;
+        if (pQ && nQ) return phoneMatch || nameMatch;
+        return pQ ? phoneMatch : nameMatch;
+      })
+      .slice(0, 8);
+  }, [customers, phone, custName]);
+
+  const applySuggestedCustomer = (c: Customer) => {
+    setCustId(String(c.id));
+    setCustName(c.name);
+    setAddress(c.address);
+    setPhone(c.phone);
+    setDeal(c.deal || '');
+    setPreviousDue(StorageService.getCustomerBalance(c.id));
+    setShowCustNameSug(false);
+    setShowCustPhoneSug(false);
+  };
 
   // Persistent Dealers master list
   const [dealersList, setDealersList] = useState<DealerDeal[]>(() => StorageService.getDealers());
@@ -97,11 +155,11 @@ export const OrderView: React.FC<OrderViewProps> = ({
   // Status message
   const [statusMsg, setStatusMsg] = useState<string>('');
 
-  // Right-side list state
+  // Right-side list state (defaults to current date's memos)
   const [selectedRightInvoice, setSelectedRightInvoice] = useState<Invoice | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>(() => getTodayLocalDateStr());
+  const [dateTo, setDateTo] = useState<string>(() => getTodayLocalDateStr());
 
   // Deal Change Modal State (for correcting deal on saved invoice)
   const [changeDealModalOpen, setChangeDealModalOpen] = useState(false);
@@ -254,13 +312,13 @@ export const OrderView: React.FC<OrderViewProps> = ({
   const handleAddItem = () => {
     const prod = products.find((p) => p.id === Number(selectedProductId));
     if (!prod) {
-      alert('তালিকা থেকে সঠিক পণ্য বাছুন।');
+      setStatusMsg('তালিকা থেকে সঠিক পণ্য বাছুন।');
       return;
     }
     const b = parseNum(itemBox);
     const pc = parseNum(itemPiece);
     if (b <= 0 && pc <= 0) {
-      alert('Box বা Piece দিন।');
+      setStatusMsg('Box বা Piece দিন।');
       return;
     }
 
@@ -323,22 +381,22 @@ export const OrderView: React.FC<OrderViewProps> = ({
   const handleSave = (printKind: 'none' | 'invoice' | 'challan', sendToDeliveryQueue: boolean = false) => {
     if (editingNo > 0) {
       if (currentUser?.role === 'staff' && permissions && !permissions.canEditInvoice) {
-        alert('এডমিন কর্তৃক আপনার চালান সম্পাদনার পারমিশন বন্ধ রাখা হয়েছে।');
+        setStatusMsg('এডমিন কর্তৃক আপনার চালান সম্পাদনার পারমিশন বন্ধ রাখা হয়েছে।');
         return;
       }
     } else {
       if (currentUser?.role === 'staff' && permissions && !permissions.canCreateInvoice) {
-        alert('এডমিন কর্তৃক নতুন চালান তৈরির পারমিশন বন্ধ রাখা হয়েছে।');
+        setStatusMsg('এডমিন কর্তৃক নতুন চালান তৈরির পারমিশন বন্ধ রাখা হয়েছে।');
         return;
       }
     }
 
     if (lines.length === 0) {
-      alert('কমপক্ষে একটি পণ্য যোগ করুন।');
+      setStatusMsg('কমপক্ষে একটি পণ্য যোগ করুন।');
       return;
     }
     if (!custName.trim()) {
-      alert('গ্রাহকের নাম দিন।');
+      setStatusMsg('গ্রাহকের নাম দিন।');
       return;
     }
 
@@ -434,7 +492,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
     if (!invoiceToChangeDeal) return;
     const trimmedDeal = newDealInput.trim();
     if (!trimmedDeal) {
-      alert('ডিলের নাম লিখুন বা তালিকা থেকে বাছুন।');
+      setStatusMsg('ডিলের নাম লিখুন বা তালিকা থেকে বাছুন।');
       return;
     }
 
@@ -454,7 +512,8 @@ export const OrderView: React.FC<OrderViewProps> = ({
       });
     }
 
-    alert(`Invoice #${invoiceToChangeDeal.no} এর ডিল সফলভাবে পরিবর্তন করে "${trimmedDeal}" করা হয়েছে!`);
+    setStatusMsg(`Invoice #${invoiceToChangeDeal.no} এর ডিল সফলভাবে পরিবর্তন করে "${trimmedDeal}" করা হয়েছে!`);
+    setTimeout(() => setStatusMsg(''), 4000);
     setChangeDealModalOpen(false);
     setInvoiceToChangeDeal(null);
   };
@@ -475,10 +534,19 @@ export const OrderView: React.FC<OrderViewProps> = ({
     if (onNavigateToStock) onNavigateToStock();
   };
 
-  // Filter right side list
+  // Filter right side list by date range (defaults to current date) and search
   const filteredInvoices = invoices.filter((inv) => {
-    const d = inv.date?.slice(0, 10) || '';
-    const inDateRange = (!dateFrom || d >= dateFrom) && (!dateTo || d <= dateTo);
+    const d = (inv.date || '').trim().slice(0, 10);
+    let inDateRange = true;
+    if (dateFrom && dateTo) {
+      const startD = dateFrom <= dateTo ? dateFrom : dateTo;
+      const endD = dateFrom <= dateTo ? dateTo : dateFrom;
+      inDateRange = d >= startD && d <= endD;
+    } else if (dateFrom) {
+      inDateRange = d >= dateFrom;
+    } else if (dateTo) {
+      inDateRange = d <= dateTo;
+    }
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
       !q ||
@@ -501,7 +569,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
   );
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-85px)] bg-slate-100 overflow-hidden text-xs">
+    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-85px)] lg:h-[calc(100vh-85px)] bg-slate-100 lg:overflow-hidden text-xs">
       {/* HTML5 Datalist for Auto-completing Dealer Deals */}
       <datalist id="dealer-deals-datalist">
         {dealersList.map((d) => (
@@ -510,9 +578,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
       </datalist>
 
       {/* ================= LEFT PANEL: ORDER ENTRY ================= */}
-      <div className="w-full lg:w-[60%] bg-white border-r border-slate-300 flex flex-col overflow-y-auto">
+      <div className="w-full lg:w-[60%] bg-white lg:border-r border-slate-300 flex flex-col lg:overflow-y-auto">
         {/* Header Bar */}
-        <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between border-b border-slate-700">
+        <div className="bg-slate-800 text-white px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-700">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-emerald-400" />
             <h2 className="font-bold text-sm tracking-wide">
@@ -563,39 +631,82 @@ export const OrderView: React.FC<OrderViewProps> = ({
                 />
               </div>
 
-              <div className="flex items-center gap-1">
-                <label className="w-24 text-slate-700 font-semibold text-right pr-2">Customer :</label>
-                <input
-                  type="text"
-                  value={custName}
-                  onChange={(e) => {
-                    setCustName(e.target.value);
-                    const match = customers.find(
-                      (c) => c.name.toLowerCase() === e.target.value.toLowerCase().trim()
-                    );
-                    if (match) {
-                      setCustId(String(match.id));
-                      setAddress(match.address);
-                      setPhone(match.phone);
-                      setDeal(match.deal || '');
-                      setPreviousDue(StorageService.getCustomerBalance(match.id));
-                    }
-                  }}
-                  placeholder="গ্রাহকের নাম বা নির্বাচন"
-                  className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 font-medium text-slate-900 focus:border-emerald-600 focus:outline-hidden"
-                />
+              <div className="flex items-center gap-1" ref={custNameBoxRef}>
+                <label className="w-24 text-slate-700 font-semibold text-right pr-2 shrink-0">Customer :</label>
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={custName}
+                    onFocus={() => setShowCustNameSug(true)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustName(val);
+                      setShowCustNameSug(true);
+                      const exact = customers.find(
+                        (c) => c.name.toLowerCase() === val.toLowerCase().trim()
+                      );
+                      if (exact) {
+                        setCustId(String(exact.id));
+                        setAddress(exact.address);
+                        setPhone(exact.phone);
+                        setDeal(exact.deal || '');
+                        setPreviousDue(StorageService.getCustomerBalance(exact.id));
+                      } else if (!val.trim()) {
+                        setCustId('');
+                      }
+                    }}
+                    placeholder="গ্রাহকের নাম বা নির্বাচন"
+                    autoComplete="off"
+                    className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-medium text-slate-900 focus:border-emerald-600 focus:outline-hidden"
+                  />
+                  {showCustNameSug && custNameMatches.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-amber-400 rounded-md shadow-xl z-40 max-h-52 overflow-y-auto divide-y divide-slate-100">
+                      <div className="px-2 py-1 bg-amber-50 text-[10px] font-bold text-amber-800 flex items-center justify-between sticky top-0 border-b border-amber-200">
+                        <span>পুরাতন গ্রাহক সাজেশন ({custNameMatches.length})</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowCustNameSug(false)}
+                          className="text-amber-700 hover:text-amber-950 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      {custNameMatches.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            applySuggestedCustomer(c);
+                          }}
+                          className="w-full text-left px-2 py-1.5 hover:bg-emerald-50 transition cursor-pointer flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate">{c.name}</div>
+                            <div className="text-[10px] text-slate-500 font-mono truncate">
+                              {c.phone || 'নম্বর নেই'}{c.address ? ` • ${c.address}` : ''}
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded shrink-0">
+                            #{c.id}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={onOpenCustomerPicker}
                   title="তালিকা থেকে বাছুন"
-                  className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-bold cursor-pointer transition"
+                  className="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-bold cursor-pointer transition shrink-0"
                 >
                   ...
                 </button>
               </div>
 
               <div className="flex items-center">
-                <label className="w-24 text-slate-700 font-semibold text-right pr-2">Short Add :</label>
+                <label className="w-24 text-slate-700 font-semibold text-right pr-2 shrink-0">Short Add :</label>
                 <input
                   type="text"
                   value={address}
@@ -605,15 +716,59 @@ export const OrderView: React.FC<OrderViewProps> = ({
                 />
               </div>
 
-              <div className="flex items-center">
-                <label className="w-24 text-slate-700 font-semibold text-right pr-2">Contact No :</label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="মোবাইল নম্বর"
-                  className="flex-1 bg-white border border-slate-300 rounded px-2 py-1 font-mono text-slate-900"
-                />
+              <div className="flex items-center" ref={custPhoneBoxRef}>
+                <label className="w-24 text-slate-700 font-semibold text-right pr-2 shrink-0">Contact No :</label>
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={phone}
+                    onFocus={() => setShowCustPhoneSug(true)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      setShowCustPhoneSug(true);
+                    }}
+                    placeholder="মোবাইল নম্বর"
+                    autoComplete="off"
+                    className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-mono text-slate-900 focus:border-emerald-600 focus:outline-hidden"
+                  />
+                  {showCustPhoneSug && custPhoneMatches.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-amber-400 rounded-md shadow-xl z-40 max-h-52 overflow-y-auto divide-y divide-slate-100">
+                      <div className="px-2 py-1 bg-amber-50 text-[10px] font-bold text-amber-800 flex items-center justify-between sticky top-0 border-b border-amber-200">
+                        <span>নাম/নম্বর সাজেশন ({custPhoneMatches.length})</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowCustPhoneSug(false)}
+                          className="text-amber-700 hover:text-amber-950 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      {custPhoneMatches.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            applySuggestedCustomer(c);
+                          }}
+                          className="w-full text-left px-2 py-1.5 hover:bg-emerald-50 transition cursor-pointer flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-mono font-bold text-emerald-800 truncate">
+                              {c.phone || 'নম্বর নেই'}
+                            </div>
+                            <div className="text-[10px] text-slate-700 font-semibold truncate">
+                              {c.name}{c.address ? ` • ${c.address}` : ''}
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded shrink-0">
+                            #{c.id}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Cust. Deal with Auto-saved Datalist */}
@@ -925,8 +1080,8 @@ export const OrderView: React.FC<OrderViewProps> = ({
 
           {/* Line Items Table */}
           <div className="border border-slate-300 rounded-lg overflow-hidden">
-            <div className="max-h-56 overflow-y-auto">
-              <table className="w-full text-xs text-left border-collapse">
+            <div className="max-h-56 overflow-auto">
+              <table className="w-full min-w-[540px] text-xs text-left border-collapse">
                 <thead className="bg-slate-200 text-slate-800 font-bold border-b border-slate-300 sticky top-0">
                   <tr>
                     <th className="p-1.5 text-center w-8">SL</th>
@@ -1007,7 +1162,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
       </div>
 
       {/* ================= RIGHT PANEL: INVOICES LIST & SEARCH ================= */}
-      <div className="w-full lg:w-[40%] bg-white flex flex-col overflow-hidden border-t lg:border-t-0">
+      <div className="w-full lg:w-[40%] bg-white flex flex-col lg:overflow-hidden border-t lg:border-t-0">
         {/* Filter bar */}
         <div className="p-2.5 bg-slate-100 border-b border-slate-200 space-y-2">
           <div className="flex items-center gap-2">
@@ -1023,18 +1178,19 @@ export const OrderView: React.FC<OrderViewProps> = ({
             </div>
             <button
               onClick={() => {
+                const today = getTodayLocalDateStr();
                 setSearchQuery('');
-                setDateFrom('');
-                setDateTo('');
+                setDateFrom(today);
+                setDateTo(today);
               }}
-              title="ফিল্টার রিসেট"
+              title="আজকের মেমু ফিল্টারে রিসেট করুন"
               className="p-1 text-slate-600 hover:text-slate-900 border border-slate-300 rounded bg-white cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-slate-600 font-semibold">From:</span>
             <input
               type="date"
@@ -1049,16 +1205,45 @@ export const OrderView: React.FC<OrderViewProps> = ({
               onChange={(e) => setDateTo(e.target.value)}
               className="bg-white border border-slate-300 rounded px-1.5 py-0.5 font-mono text-[11px]"
             />
+            <button
+              type="button"
+              onClick={() => {
+                const today = getTodayLocalDateStr();
+                setDateFrom(today);
+                setDateTo(today);
+              }}
+              className={`px-2 py-0.5 rounded font-bold text-[10px] border cursor-pointer transition ${
+                dateFrom === getTodayLocalDateStr() && dateTo === getTodayLocalDateStr()
+                  ? 'bg-emerald-700 text-white border-emerald-700'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              আজকের
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom('');
+                setDateTo('');
+              }}
+              className={`px-2 py-0.5 rounded font-bold text-[10px] border cursor-pointer transition ${
+                !dateFrom && !dateTo
+                  ? 'bg-slate-800 text-white border-slate-800'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              সব তারিখ
+            </button>
           </div>
         </div>
 
         {/* Invoice Grid with Deal Column and Status */}
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-xs text-left border-collapse">
+        <div className="flex-1 overflow-auto max-h-[380px] lg:max-h-none">
+          <table className="w-full min-w-[520px] text-xs text-left border-collapse">
             <thead className="bg-slate-200 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
               <tr>
                 <th className="p-1.5 text-center w-8">SL</th>
-                <th className="p-1.5 text-center w-16">Invoice</th>
+                <th className="p-1.5 text-center w-20">Invoice</th>
                 <th className="p-1.5">গ্রাহক ও ঠিকানা</th>
                 <th className="p-1.5">কাস্টমার ডিল</th>
                 <th className="p-1.5 text-right w-18">মূল্য (৳)</th>
@@ -1083,7 +1268,10 @@ export const OrderView: React.FC<OrderViewProps> = ({
                     }`}
                   >
                     <td className="p-1.5 text-center font-mono text-[11px] text-slate-500">{idx + 1}</td>
-                    <td className="p-1.5 text-center font-mono font-bold text-slate-900">#{inv.no}</td>
+                    <td className="p-1.5 text-center font-mono">
+                      <div className="font-bold text-slate-900">#{inv.no}</div>
+                      <div className="text-[9px] text-slate-500 font-normal">{(inv.date || '').slice(0, 10)}</div>
+                    </td>
                     <td className="p-1.5">
                       <div className="font-semibold text-slate-900">{inv.custName}</div>
                       <div className="text-[10px] text-slate-500 truncate max-w-[120px]">
@@ -1158,7 +1346,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
               {filteredInvoices.length === 0 && (
                 <tr>
                   <td colSpan={7} className="p-6 text-center text-slate-400">
-                    কোনো চালান পাওয়া যায়নি
+                    {invoices.length === 0
+                      ? 'কোনো চালান পাওয়া যায়নি'
+                      : 'নির্বাচিত তারিখে কোনো মেমু পাওয়া যায়নি — পুরাতন মেমু দেখতে From/To তারিখ পরিবর্তন করুন'}
                   </td>
                 </tr>
               )}
@@ -1184,7 +1374,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
             <button
               onClick={() => {
                 if (currentUser?.role === 'staff' && permissions && !permissions.canEditInvoice) {
-                  alert('চালান সংশোধন করার অনুমতি শুধুমাত্র এডমিনের রয়েছে।');
+                  setStatusMsg('চালান সংশোধন করার অনুমতি শুধুমাত্র এডমিনের রয়েছে।');
                   return;
                 }
                 if (selectedRightInvoice) handleLoadSelectedInvoice(selectedRightInvoice);
@@ -1198,7 +1388,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
             <button
               onClick={() => {
                 if (currentUser?.role === 'staff' && permissions && !permissions.canChangeDeal) {
-                  alert('ডিল পরিবর্তন করার অনুমতি শুধুমাত্র এডমিনের রয়েছে।');
+                  setStatusMsg('ডিল পরিবর্তন করার অনুমতি শুধুমাত্র এডমিনের রয়েছে।');
                   return;
                 }
                 if (selectedRightInvoice) handleOpenDealChangeModal(selectedRightInvoice);

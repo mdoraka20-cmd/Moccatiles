@@ -4,6 +4,7 @@ import {
   setDoc,
   deleteDoc,
   onSnapshot,
+  getDoc,
   getDocs,
   writeBatch,
 } from 'firebase/firestore';
@@ -25,6 +26,7 @@ import { StorageService } from './storage';
 
 export class FirestoreSyncService {
   private static isInitialized = false;
+  private static bootstrapDone = false;
 
   // Initialize Real-time synchronization
   static initRealtimeSync(callbacks: {
@@ -45,10 +47,14 @@ export class FirestoreSyncService {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // First, bootstrap initial data to Firestore if Firestore is empty
-    this.bootstrapDataIfEmpty().catch((err) => {
-      console.warn('Initial Firestore bootstrap notice:', err);
-    });
+    // First, bootstrap initial data to Firestore if Firestore is fresh
+    this.bootstrapDataIfEmpty()
+      .catch((err) => {
+        console.warn('Initial Firestore bootstrap notice:', err);
+      })
+      .finally(() => {
+        this.bootstrapDone = true;
+      });
 
     // 1. Shop Config Listener
     const shopPath = 'shop';
@@ -69,7 +75,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, prodPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const prods: Product[] = [];
           snap.forEach((d) => prods.push(d.data() as Product));
           prods.sort((a, b) => a.id - b.id);
@@ -85,7 +91,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, custPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const custs: Customer[] = [];
           snap.forEach((d) => custs.push(d.data() as Customer));
           custs.sort((a, b) => a.id - b.id);
@@ -101,7 +107,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, invPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const invs: Invoice[] = [];
           snap.forEach((d) => invs.push(d.data() as Invoice));
           invs.sort((a, b) => b.no - a.no);
@@ -117,7 +123,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, payPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const pays: Payment[] = [];
           snap.forEach((d) => pays.push(d.data() as Payment));
           pays.sort((a, b) => b.id - a.id);
@@ -133,7 +139,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, txnPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const txnsList: Txn[] = [];
           snap.forEach((d) => txnsList.push(d.data() as Txn));
           txnsList.sort((a, b) => b.id - a.id);
@@ -149,7 +155,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, dealPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const dealersList: DealerDeal[] = [];
           snap.forEach((d) => dealersList.push(d.data() as DealerDeal));
           dealersList.sort((a, b) => a.id - b.id);
@@ -160,7 +166,7 @@ export class FirestoreSyncService {
       (error) => handleFirestoreError(error, OperationType.LIST, dealPath)
     );
 
-    // 8. Users Listener
+    // 8. Users Listener (always syncs latest login data across all devices)
     const userPath = 'users';
     onSnapshot(
       collection(db, userPath),
@@ -180,7 +186,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, stockInPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const records: StockInRecord[] = [];
           snap.forEach((d) => records.push(d.data() as StockInRecord));
           records.sort((a, b) => b.id - a.id);
@@ -196,7 +202,7 @@ export class FirestoreSyncService {
     onSnapshot(
       collection(db, delivPath),
       (snap) => {
-        if (!snap.empty) {
+        if (!snap.empty || this.bootstrapDone) {
           const challans: DeliveryChallan[] = [];
           snap.forEach((d) => challans.push(d.data() as DeliveryChallan));
           challans.sort((a, b) => b.id - a.id);
@@ -495,17 +501,100 @@ export class FirestoreSyncService {
         categories: currentCats,
         vendors: currentVendors,
         staffPerms: currentPerms,
+        bootstrapped: true,
       });
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
   }
 
-  // Bootstrap initial sample / localStorage data if cloud database is fresh
+  // Delete all documents inside a Firestore collection in chunks
+  private static async deleteCollectionDocs(colName: string) {
+    const snap = await getDocs(collection(db, colName));
+    if (snap.empty) return;
+    const docsList = snap.docs;
+    for (let i = 0; i < docsList.length; i += 400) {
+      const batch = writeBatch(db);
+      const chunk = docsList.slice(i, i + 400);
+      chunk.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+
+  // Selective or full data deletion across Local + Cloud Firestore
+  static async syncClearCollections(targets: string[]) {
+    StorageService.clearSelectiveData(targets);
+    const wipeAll = targets.includes('all');
+    const allTargets = [
+      'invoices',
+      'payments',
+      'txns',
+      'stockInRecords',
+      'deliveryChallans',
+      'customers',
+      'products',
+      'dealers',
+    ];
+    const toWipe = wipeAll ? allTargets : targets.filter((t) => allTargets.includes(t));
+
+    for (const colName of toWipe) {
+      try {
+        await this.deleteCollectionDocs(colName);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, colName);
+      }
+    }
+  }
+
+  // Full restore from JSON backup across Local + Cloud Firestore (all devices update live)
+  static async syncFullRestoreFromJSON(jsonStr: string): Promise<boolean> {
+    const ok = StorageService.importFromJSON(jsonStr);
+    if (!ok) return false;
+
+    const data = JSON.parse(jsonStr);
+    const writeChunked = async (colName: string, items: any[], getId: (item: any) => string) => {
+      await this.deleteCollectionDocs(colName);
+      for (let i = 0; i < items.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = items.slice(i, i + 400);
+        chunk.forEach((item) => {
+          batch.set(doc(db, colName, getId(item)), item);
+        });
+        await batch.commit();
+      }
+    };
+
+    try {
+      if (data.shop) await setDoc(doc(db, 'shop', 'config'), data.shop);
+      if (Array.isArray(data.products)) await writeChunked('products', data.products, (p) => String(p.id));
+      if (Array.isArray(data.customers)) await writeChunked('customers', data.customers, (c) => String(c.id));
+      if (Array.isArray(data.invoices)) await writeChunked('invoices', data.invoices, (inv) => String(inv.no));
+      if (Array.isArray(data.payments)) await writeChunked('payments', data.payments, (p) => String(p.id));
+      if (Array.isArray(data.txns)) await writeChunked('txns', data.txns, (t) => String(t.id));
+      if (Array.isArray(data.dealers)) await writeChunked('dealers', data.dealers, (d) => String(d.id));
+      if (Array.isArray(data.users) && data.users.length > 0) await writeChunked('users', data.users, (u) => String(u.id));
+      if (Array.isArray(data.stockInRecords)) await writeChunked('stockInRecords', data.stockInRecords, (r) => String(r.id));
+      if (Array.isArray(data.deliveryChallans)) await writeChunked('deliveryChallans', data.deliveryChallans, (ch) => String(ch.id));
+
+      await setDoc(doc(db, 'metadata', 'lists'), {
+        categories: StorageService.getCategories(),
+        vendors: StorageService.getVendors(),
+        staffPerms: StorageService.getStaffPermissions(),
+        bootstrapped: true,
+      });
+      return true;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'restore');
+      return false;
+    }
+  }
+
+  // Bootstrap initial sample / localStorage data only if cloud database has never been initialized
   private static async bootstrapDataIfEmpty() {
     try {
-      const snap = await getDocs(collection(db, 'products'));
-      if (snap.empty) {
+      const metaSnap = await getDoc(doc(db, 'metadata', 'lists'));
+      const usersSnap = await getDocs(collection(db, 'users'));
+      if (!metaSnap.exists() && usersSnap.empty) {
         console.log('Fresh Firestore detected. Bootstrapping data to Cloud Firestore...');
         const batch = writeBatch(db);
 
@@ -572,6 +661,7 @@ export class FirestoreSyncService {
           categories: StorageService.getCategories(),
           vendors: StorageService.getVendors(),
           staffPerms: StorageService.getStaffPermissions(),
+          bootstrapped: true,
         });
 
         await batch.commit();

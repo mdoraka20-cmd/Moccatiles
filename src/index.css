@@ -6,12 +6,16 @@
   }
 }
 
+#print-only-container {
+  display: none;
+}
+
 @media print {
   @page {
     margin: 6mm 8mm;
     size: A4 portrait;
   }
-  
+
   html, body {
     margin: 0 !important;
     padding: 0 !important;
@@ -19,6 +23,22 @@
     color: #0f172a !important;
     overflow: visible !important;
     height: auto !important;
+  }
+
+  /* When printing via #print-only-container, hide everything else cleanly */
+  body.printing-custom-doc > *:not(#print-only-container) {
+    display: none !important;
+  }
+
+  body.printing-custom-doc #print-only-container {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Hide app navigation, control bars and any print-hidden items */
