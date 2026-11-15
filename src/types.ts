@@ -128,6 +128,13 @@ export interface StaffPermissions {
   canBackupData: boolean;          // ডাটা ব্যাকআপ
 }
 
+export interface NoticeBanner {
+  enabled: boolean;
+  message: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 // Stock In / Vendor Purchase Record
 export interface StockInItem {
   productId: number;

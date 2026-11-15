@@ -178,12 +178,16 @@
     },
     "MetadataDoc": {
       "title": "MetadataDoc",
-      "description": "System lookup metadata like categories, vendors, and staff permissions",
+      "description": "System lookup metadata like categories, vendors, staff permissions, and notice ticker",
       "type": "object",
       "properties": {
         "categories": { "type": "array", "description": "List of categories" },
         "vendors": { "type": "array", "description": "List of vendors" },
-        "staffPerms": { "type": "object", "description": "Staff permission flags" }
+        "staffPerms": { "type": "object", "description": "Staff permission flags" },
+        "enabled": { "type": "boolean", "description": "Notice ticker enabled state" },
+        "message": { "type": "string", "description": "Notice ticker broadcast text" },
+        "updatedAt": { "type": "string", "description": "Last notice update timestamp" },
+        "updatedBy": { "type": "string", "description": "Admin who updated the notice" }
       }
     }
   },

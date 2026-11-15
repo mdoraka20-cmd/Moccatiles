@@ -10,6 +10,31 @@
   display: none;
 }
 
+@keyframes notice-marquee-scroll {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.notice-marquee-wrapper {
+  overflow: hidden;
+  position: relative;
+}
+
+.notice-marquee-track {
+  display: inline-block;
+  white-space: nowrap;
+  padding-left: 100%;
+  animation: notice-marquee-scroll 22s linear infinite;
+}
+
+.notice-marquee-wrapper:hover .notice-marquee-track {
+  animation-play-state: paused;
+}
+
 @media print {
   @page {
     margin: 6mm 8mm;

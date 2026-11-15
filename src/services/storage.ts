@@ -13,6 +13,7 @@ import {
   Txn,
   AppUser,
   StaffPermissions,
+  NoticeBanner,
 } from '../types';
 
 const STORAGE_KEYS = {
@@ -31,6 +32,7 @@ const STORAGE_KEYS = {
   STAFF_PERMS: 'tiles_billing_staff_perms_v2',
   CATEGORIES: 'tiles_billing_categories_v2',
   VENDORS: 'tiles_billing_vendors_v2',
+  NOTICE: 'tiles_billing_notice_v2',
 };
 
 export const defaultCategories: string[] = [
@@ -596,6 +598,29 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.STAFF_PERMS, JSON.stringify(perms));
   }
 
+  // Global Scrolling Notice Banner
+  static getNotice(): NoticeBanner {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.NOTICE);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return {
+          enabled: Boolean(parsed.enabled),
+          message: String(parsed.message || ''),
+          updatedAt: parsed.updatedAt || '',
+          updatedBy: parsed.updatedBy || '',
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { enabled: false, message: '' };
+  }
+
+  static saveNotice(notice: NoticeBanner) {
+    localStorage.setItem(STORAGE_KEYS.NOTICE, JSON.stringify(notice));
+  }
+
   // Categories Master Management
   static getCategories(): string[] {
     try {
@@ -964,7 +989,15 @@ export class StorageService {
 
   static nextCustId(): number {
     const customers = this.getCustomers();
-    return customers.length === 0 ? 4000001 : Math.max(...customers.map((c) => c.id)) + 1;
+    const invoices = this.getInvoices();
+    const payments = this.getPayments();
+    const allIds = [
+      4000000,
+      ...customers.map((c) => Number(c.id) || 0),
+      ...invoices.map((i) => Number(i.custId) || 0),
+      ...payments.map((p) => Number(p.custId) || 0),
+    ];
+    return Math.max(...allIds) + 1;
   }
 
   static nextPayId(): number {
@@ -1003,6 +1036,7 @@ export class StorageService {
       categories: this.getCategories(),
       vendors: this.getVendors(),
       staffPermissions: this.getStaffPermissions(),
+      notice: this.getNotice(),
       exportedAt: new Date().toISOString(),
     };
     return JSON.stringify(data, null, 2);
@@ -1025,6 +1059,7 @@ export class StorageService {
       if (Array.isArray(data.categories)) this.saveCategories(data.categories);
       if (Array.isArray(data.vendors)) this.saveVendors(data.vendors);
       if (data.staffPermissions) this.saveStaffPermissions(data.staffPermissions);
+      if (data.notice) this.saveNotice(data.notice);
       return true;
     } catch (e) {
       console.error('Import failed', e);

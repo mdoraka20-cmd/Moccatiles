@@ -195,7 +195,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
   const resetForm = () => {
     setEditingNo(0);
     setInvoiceNo(StorageService.nextInvoiceNo());
-    setSalesDate(new Date().toISOString().slice(0, 10));
+    setSalesDate(getTodayLocalDateStr());
     setCustId('');
     setCustName('');
     setAddress('');
@@ -406,13 +406,23 @@ export const OrderView: React.FC<OrderViewProps> = ({
       refreshDealers();
     }
 
-    // Check customer
-    let customerToUse = customers.find(
-      (c) => c.name.toLowerCase() === custName.trim().toLowerCase() && (!phone.trim() || c.phone === phone.trim())
-    );
+    // Check customer: use explicitly selected custId first, or exact name + phone match
+    let customerToUse = custId
+      ? customers.find((c) => String(c.id) === custId && c.name.toLowerCase() === custName.trim().toLowerCase())
+      : undefined;
 
+    if (!customerToUse && phone.trim()) {
+      customerToUse = customers.find(
+        (c) =>
+          c.name.toLowerCase() === custName.trim().toLowerCase() &&
+          c.phone.trim() === phone.trim()
+      );
+    }
+
+    let isNewlyCreatedCustomer = false;
     if (!customerToUse) {
-      // Create new customer on the fly
+      // Create new customer on the fly with 0 opening due
+      isNewlyCreatedCustomer = true;
       const newCustId = StorageService.nextCustId();
       customerToUse = {
         id: newCustId,
@@ -426,6 +436,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
       StorageService.saveCustomers(updatedCustomers);
     }
 
+    const effectivePrevDue = isNewlyCreatedCustomer ? 0 : previousDue;
     const currentNo = editingNo > 0 ? editingNo : invoiceNo;
     const inv: Invoice = {
       no: currentNo,
@@ -438,7 +449,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
       comment: comment.trim(),
       labor: laborVal,
       discount: discountVal,
-      prevDue: previousDue,
+      prevDue: effectivePrevDue,
       cash: cashVal,
       bank: bankVal,
       bkash: bkashVal,
@@ -642,17 +653,14 @@ export const OrderView: React.FC<OrderViewProps> = ({
                       const val = e.target.value;
                       setCustName(val);
                       setShowCustNameSug(true);
-                      const exact = customers.find(
-                        (c) => c.name.toLowerCase() === val.toLowerCase().trim()
-                      );
-                      if (exact) {
-                        setCustId(String(exact.id));
-                        setAddress(exact.address);
-                        setPhone(exact.phone);
-                        setDeal(exact.deal || '');
-                        setPreviousDue(StorageService.getCustomerBalance(exact.id));
-                      } else if (!val.trim()) {
-                        setCustId('');
+                      if (custId) {
+                        const currentLinked = customers.find((c) => String(c.id) === custId);
+                        if (!currentLinked || currentLinked.name.toLowerCase() !== val.toLowerCase().trim()) {
+                          setCustId('');
+                          setPreviousDue(0);
+                        }
+                      } else {
+                        setPreviousDue(0);
                       }
                     }}
                     placeholder="গ্রাহকের নাম বা নির্বাচন"

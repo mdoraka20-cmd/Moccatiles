@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppUser, Customer, DealerDeal, Invoice, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
+import { AppUser, Customer, DealerDeal, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
 import { StorageService, defaultStaffPermissions } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import {
@@ -24,6 +24,8 @@ import {
   Database,
   Download,
   Upload,
+  Megaphone,
+  Power,
 } from 'lucide-react';
 
 interface AdminControlViewProps {
@@ -35,6 +37,8 @@ interface AdminControlViewProps {
   products?: Product[];
   payments?: Payment[];
   txns?: Txn[];
+  notice?: NoticeBanner;
+  onUpdateNotice?: (notice: NoticeBanner) => void;
   onDataChanged: () => void;
 }
 
@@ -47,9 +51,11 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   products: propProducts,
   payments: propPayments,
   txns: propTxns,
+  notice: propNotice,
+  onUpdateNotice,
   onDataChanged,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'data_control'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'notice' | 'data_control'>('users');
 
   // Users State (always synchronized with live Firestore updates)
   const [users, setUsers] = useState<AppUser[]>(() => (propUsers && propUsers.length > 0 ? propUsers : StorageService.getUsers()));
@@ -96,6 +102,15 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     description: '',
   });
 
+  // Global Scrolling Notice Banner State
+  const [noticeEnabled, setNoticeEnabled] = useState<boolean>(() =>
+    propNotice ? propNotice.enabled : StorageService.getNotice().enabled
+  );
+  const [noticeMessage, setNoticeMessage] = useState<string>(() =>
+    propNotice ? propNotice.message : StorageService.getNotice().message
+  );
+  const [noticeStatusMsg, setNoticeStatusMsg] = useState('');
+
   useEffect(() => {
     if (propUsers && propUsers.length > 0) {
       setUsers(propUsers);
@@ -107,6 +122,63 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       setDealers(propDealers);
     }
   }, [propDealers]);
+
+  useEffect(() => {
+    if (propNotice) {
+      setNoticeEnabled(propNotice.enabled);
+      setNoticeMessage(propNotice.message);
+    }
+  }, [propNotice]);
+
+  const publishNotice = (nextEnabled: boolean, nextMsg: string, feedbackText: string) => {
+    const payload: NoticeBanner = {
+      enabled: nextEnabled,
+      message: nextMsg.trim(),
+      updatedAt: new Date().toLocaleString('bn-BD'),
+      updatedBy: currentUser.name,
+    };
+    StorageService.saveNotice(payload);
+    if (onUpdateNotice) {
+      onUpdateNotice(payload);
+    } else {
+      FirestoreSyncService.syncNotice(payload).catch(console.error);
+    }
+    setNoticeStatusMsg(feedbackText);
+    setTimeout(() => setNoticeStatusMsg(''), 4000);
+  };
+
+  const handleToggleNoticeEnabled = () => {
+    const nextEnabled = !noticeEnabled;
+    if (nextEnabled && !noticeMessage.trim()) {
+      setNoticeStatusMsg('❌ আগে নোটিশের মেসেজ লিখুন, তারপর চালু (ON) করুন।');
+      setTimeout(() => setNoticeStatusMsg(''), 4000);
+      return;
+    }
+    setNoticeEnabled(nextEnabled);
+    publishNotice(
+      nextEnabled,
+      noticeMessage,
+      nextEnabled
+        ? '✅ নোটিশ লাইন চালু (ON) করা হয়েছে — সব ইউজারের টাইমলাইনে এখন দেখা যাচ্ছে!'
+        : 'নোটিশ লাইন বন্ধ (OFF) করা হয়েছে — সব ইউজারের টাইমলাইন থেকে হাইড হয়েছে।'
+    );
+  };
+
+  const handleSaveNoticeMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (noticeEnabled && !noticeMessage.trim()) {
+      setNoticeStatusMsg('❌ নোটিশ চালু অবস্থায় মেসেজ খালি রাখা যাবে না।');
+      setTimeout(() => setNoticeStatusMsg(''), 4000);
+      return;
+    }
+    publishNotice(
+      noticeEnabled,
+      noticeMessage,
+      noticeEnabled
+        ? '✅ নোটিশ মেসেজ আপডেট হয়ে সব ইউজারের টাইমলাইনে পাঠানো হয়েছে!'
+        : '✅ নোটিশ মেসেজ সংরক্ষিত হয়েছে (বর্তমানে OFF আছে — দেখাতে চাইলে ON বাটনে চাপুন)।'
+    );
+  };
 
   const handleTogglePerm = (key: keyof StaffPermissions) => {
     setStaffPerms((prev) => ({
@@ -539,6 +611,24 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
         >
           <Lock className="w-3.5 h-3.5" />
           ভূমিকা ও অনুমতি
+        </button>
+        <button
+          onClick={() => setActiveSubTab('notice')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
+            activeSubTab === 'notice'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          <Megaphone className="w-3.5 h-3.5" />
+          নোটিশ লাইন
+          <span
+            className={`px-1.5 py-0.2 rounded text-[9px] font-mono uppercase ${
+              noticeEnabled ? 'bg-emerald-500 text-white' : 'bg-slate-600 text-slate-200'
+            }`}
+          >
+            {noticeEnabled ? 'ON' : 'OFF'}
+          </span>
         </button>
         <button
           onClick={() => setActiveSubTab('data_control')}
@@ -1278,7 +1368,132 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
           </div>
         )}
 
-        {/* ================= 4. DATA BACKUP, RESTORE & DELETE SUBTAB ================= */}
+        {/* ================= 4. GLOBAL SCROLLING NOTICE LINE SUBTAB ================= */}
+        {activeSubTab === 'notice' && (
+          <div className="space-y-4 max-w-4xl mx-auto">
+            {noticeStatusMsg && (
+              <div
+                className={`p-3 rounded-lg border font-semibold text-xs flex items-center justify-between ${
+                  noticeStatusMsg.startsWith('❌')
+                    ? 'bg-rose-50 border-rose-300 text-rose-800'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                }`}
+              >
+                <span>{noticeStatusMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setNoticeStatusMsg('')}
+                  className="text-xs font-bold px-2 py-0.5 rounded hover:bg-black/5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <div className="bg-white rounded-lg border border-slate-300 p-4 sm:p-5 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <Megaphone className="w-4 h-4 text-amber-600" />
+                    সকল ইউজারের জন্য স্ক্রল নোটিশ লাইন (Broadcast Notice Ticker)
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    এখানে দেওয়া মেসেজটি সাথে সাথে সব স্টাফ ও এডমিন ইউজারের স্ক্রিনের উপরে চলমান নোটিশ হিসেবে দেখা যাবে। ইচ্ছামত ON বা OFF রাখতে পারবেন।
+                  </p>
+                </div>
+
+                {/* Big ON / OFF Toggle Button */}
+                <button
+                  type="button"
+                  onClick={handleToggleNoticeEnabled}
+                  className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-xs shrink-0 border ${
+                    noticeEnabled
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-700'
+                      : 'bg-slate-200 hover:bg-slate-300 text-slate-800 border-slate-300'
+                  }`}
+                >
+                  <Power className="w-4 h-4" />
+                  <span>{noticeEnabled ? 'চালু আছে (ON)' : 'বন্ধ আছে (OFF)'}</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveNoticeMessage} className="space-y-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    নোটিশ মেসেজ লিখুন (Notice Text):
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={noticeMessage}
+                    onChange={(e) => setNoticeMessage(e.target.value)}
+                    placeholder="উদাহরণ: আজ বিকাল ৫টার পর স্টক গণনা করা হবে, সবাই সময়মতো চালান এন্ট্রি সম্পন্ন করুন..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-xs sm:text-sm focus:bg-white focus:border-amber-600 focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-slate-500">
+                    {propNotice?.updatedAt && (
+                      <span>
+                        সর্বশেষ আপডেট: <strong>{propNotice.updatedAt}</strong>
+                        {propNotice.updatedBy ? ` (${propNotice.updatedBy})` : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNoticeMessage('');
+                        if (noticeEnabled) {
+                          setNoticeEnabled(false);
+                          publishNotice(false, '', 'নোটিশ মুছে ফেলে OFF করা হয়েছে।');
+                        }
+                      }}
+                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                    >
+                      মেসেজ মুছুন
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4" />
+                      সেভ ও প্রকাশ করুন (Save & Broadcast)
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              {/* Live Preview Box */}
+              <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                <span className="block text-[11px] font-bold text-slate-600">
+                  লাইভ প্রিভিউ (ইউজাররা যেভাবে দেখবে):
+                </span>
+                {noticeEnabled && noticeMessage.trim() ? (
+                  <div className="bg-amber-400 text-slate-950 border border-amber-500 rounded flex items-center h-8 text-xs font-bold overflow-hidden">
+                    <div className="bg-rose-700 text-white px-2.5 h-full flex items-center gap-1.5 shrink-0 z-10">
+                      <Megaphone className="w-3.5 h-3.5 animate-pulse" />
+                      <span>নোটিশ</span>
+                    </div>
+                    <div className="notice-marquee-wrapper flex-1 h-full flex items-center">
+                      <span className="notice-marquee-track px-4">{noticeMessage}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-slate-100 border border-dashed border-slate-300 rounded p-2.5 text-center text-slate-500 text-xs">
+                    {noticeEnabled
+                      ? 'মেসেজ লিখুন — প্রিভিউ এখানে দেখা যাবে'
+                      : 'নোটিশ লাইন বর্তমানে বন্ধ (OFF) আছে। চালু করতে উপরে ON বাটনে চাপুন।'}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= 5. DATA BACKUP, RESTORE & DELETE SUBTAB ================= */}
         {activeSubTab === 'data_control' && (
           <div className="space-y-4 max-w-5xl mx-auto">
             {(dataStatusMsg || dataErrorMsg) && (

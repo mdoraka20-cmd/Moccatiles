@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActiveTab, AppUser, ShopConfig, StaffPermissions } from '../types';
+import { ActiveTab, AppUser, NoticeBanner, ShopConfig, StaffPermissions } from '../types';
 import {
   FileText,
   Users,
@@ -21,6 +21,7 @@ import {
   LogOut,
   Menu,
   X,
+  Megaphone,
 } from 'lucide-react';
 
 interface HeaderToolbarProps {
@@ -34,6 +35,7 @@ interface HeaderToolbarProps {
   onOpenLoginModal: () => void;
   onLogout?: () => void;
   permissions?: StaffPermissions;
+  notice?: NoticeBanner;
 }
 
 interface NavItem {
@@ -55,6 +57,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   onOpenLoginModal,
   onLogout,
   permissions,
+  notice,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -309,6 +312,21 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
           )}
         </div>
       </div>
+
+      {/* Live Scrolling Notice Line (Controlled by Admin Panel ON/OFF) */}
+      {notice?.enabled && notice.message.trim() && (
+        <div className="bg-amber-400 text-slate-950 border-t border-amber-500/80 flex items-center h-7 text-xs font-bold overflow-hidden">
+          <div className="bg-rose-700 text-white px-2.5 h-full flex items-center gap-1.5 shrink-0 z-10 shadow-sm">
+            <Megaphone className="w-3.5 h-3.5 animate-pulse shrink-0" />
+            <span>নোটিশ</span>
+          </div>
+          <div className="notice-marquee-wrapper flex-1 h-full flex items-center">
+            <span className="notice-marquee-track px-4 tracking-wide">
+              {notice.message}
+            </span>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

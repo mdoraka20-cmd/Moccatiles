@@ -21,6 +21,7 @@ import {
   Txn,
   AppUser,
   StaffPermissions,
+  NoticeBanner,
 } from '../types';
 import { StorageService } from './storage';
 
@@ -43,6 +44,7 @@ export class FirestoreSyncService {
     onCategoriesUpdate?: (categories: string[]) => void;
     onVendorsUpdate?: (vendors: string[]) => void;
     onStaffPermsUpdate?: (perms: StaffPermissions) => void;
+    onNoticeUpdate?: (notice: NoticeBanner) => void;
   }) {
     if (this.isInitialized) return;
     this.isInitialized = true;
@@ -235,6 +237,25 @@ export class FirestoreSyncService {
         }
       },
       (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/lists`)
+    );
+
+    // 12. Global Notice Banner Listener
+    onSnapshot(
+      doc(db, metaPath, 'notice'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as NoticeBanner;
+          const normalized: NoticeBanner = {
+            enabled: Boolean(data.enabled),
+            message: String(data.message || ''),
+            updatedAt: data.updatedAt || '',
+            updatedBy: data.updatedBy || '',
+          };
+          StorageService.saveNotice(normalized);
+          if (callbacks.onNoticeUpdate) callbacks.onNoticeUpdate(normalized);
+        }
+      },
+      (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/notice`)
     );
   }
 
@@ -508,6 +529,17 @@ export class FirestoreSyncService {
     }
   }
 
+  // Sync Global Notice Banner to Firestore (all users receive live updates)
+  static async syncNotice(notice: NoticeBanner) {
+    StorageService.saveNotice(notice);
+    const path = 'metadata/notice';
+    try {
+      await setDoc(doc(db, 'metadata', 'notice'), notice);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }
+
   // Delete all documents inside a Firestore collection in chunks
   private static async deleteCollectionDocs(colName: string) {
     const snap = await getDocs(collection(db, colName));
@@ -582,6 +614,9 @@ export class FirestoreSyncService {
         staffPerms: StorageService.getStaffPermissions(),
         bootstrapped: true,
       });
+      if (data.notice) {
+        await setDoc(doc(db, 'metadata', 'notice'), StorageService.getNotice());
+      }
       return true;
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'restore');

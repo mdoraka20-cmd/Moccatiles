@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ActiveTab, AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
+import { ActiveTab, AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
 import { StorageService } from './services/storage';
 import { HeaderToolbar } from './components/HeaderToolbar';
 import { DashboardView } from './components/DashboardView';
@@ -80,6 +80,7 @@ export default function App() {
   const [txns, setTxns] = useState<Txn[]>(() => StorageService.getTxns());
   const [users, setUsers] = useState<AppUser[]>(() => StorageService.getUsers());
   const [dealers, setDealers] = useState<DealerDeal[]>(() => StorageService.getDealers());
+  const [notice, setNotice] = useState<NoticeBanner>(() => StorageService.getNotice());
 
   // Customer modal picker state
   const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
@@ -178,6 +179,7 @@ export default function App() {
       onCategoriesUpdate: () => refreshAllData(),
       onVendorsUpdate: () => refreshAllData(),
       onStaffPermsUpdate: (perms) => setStaffPermissions(perms),
+      onNoticeUpdate: (newNotice) => setNotice(newNotice),
     });
 
     return () => clearInterval(interval);
@@ -192,6 +194,7 @@ export default function App() {
     setTxns(StorageService.getTxns());
     setUsers(StorageService.getUsers());
     setDealers(StorageService.getDealers());
+    setNotice(StorageService.getNotice());
     if (StorageService.isUserLoggedIn()) {
       setCurrentUser(StorageService.getCurrentUser());
     }
@@ -212,8 +215,13 @@ export default function App() {
     StorageService.saveInvoices(updated);
     FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
 
-    // Refresh customers in state in case new customer was added
-    setCustomers(StorageService.getCustomers());
+    // Refresh customers in state in case new customer was added and sync to Firestore
+    const latestCustomers = StorageService.getCustomers();
+    setCustomers(latestCustomers);
+    const createdCust = latestCustomers.find((c) => c.id === inv.custId);
+    if (createdCust && !customers.some((c) => c.id === createdCust.id)) {
+      FirestoreSyncService.syncSaveCustomer(createdCust).catch(console.error);
+    }
 
     if (printKind === 'invoice') {
       setPrintModal({
@@ -372,6 +380,7 @@ export default function App() {
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
         onLogout={handleLogout}
         permissions={staffPermissions}
+        notice={notice}
       />
 
       {/* Main View Area */}
@@ -530,6 +539,11 @@ export default function App() {
             products={products}
             payments={payments}
             txns={txns}
+            notice={notice}
+            onUpdateNotice={(updatedNotice) => {
+              setNotice(updatedNotice);
+              FirestoreSyncService.syncNotice(updatedNotice).catch(console.error);
+            }}
             onDataChanged={refreshAllData}
           />
         )}
