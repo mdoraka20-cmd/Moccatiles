@@ -33,7 +33,9 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build Project
-        run: npm run build
+        run: |
+          npm run build
+          if [ -f CNAME ]; then cp CNAME dist/CNAME; fi
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v4
