@@ -239,10 +239,16 @@ export default function App() {
   };
 
   const handleDeleteInvoice = (no: number) => {
-    const updated = invoices.filter((i) => i.no !== no);
+    const updated = StorageService.getInvoices().filter((i) => i.no !== no);
     setInvoices(updated);
     StorageService.saveInvoices(updated);
     FirestoreSyncService.syncDeleteInvoice(no).catch(console.error);
+    FirestoreSyncService.syncDeleteDeliveryChallansByInvoice(no).catch(console.error);
+  };
+
+  const handleDeleteDeliveryChallan = (challanId: number) => {
+    FirestoreSyncService.syncDeleteDeliveryChallan(challanId).catch(console.error);
+    refreshAllData();
   };
 
   const handleUpdateInvoiceDeal = (invoiceNo: number, newDeal: string) => {
@@ -443,6 +449,9 @@ export default function App() {
             permissions={staffPermissions}
             onOpenPrintModal={(payload) => setPrintModal(payload)}
             onStockUpdated={refreshAllData}
+            onDeletePendingChallan={handleDeleteInvoice}
+            onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
+            onRequireAdminAuth={requestAdminAction}
           />
         )}
 
@@ -544,6 +553,8 @@ export default function App() {
               setNotice(updatedNotice);
               FirestoreSyncService.syncNotice(updatedNotice).catch(console.error);
             }}
+            onDeletePendingChallan={handleDeleteInvoice}
+            onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
             onDataChanged={refreshAllData}
           />
         )}

@@ -69,6 +69,8 @@ export const defaultStaffPermissions: StaffPermissions = {
   canAccessStock: true,
   canDispatchDelivery: true,
   canStockIn: true,
+  canDeletePendingChallan: false,
+  canDeleteDeliveryChallan: false,
   canManageCustomers: true,
   canDeleteCustomers: false,
   canManageProducts: false,
@@ -832,6 +834,54 @@ export class StorageService {
       invoices[invIdx].deliveryStatus = statusObj.status;
       this.saveInvoices(invoices);
     }
+  }
+
+  static deleteDeliveryChallan(challanId: number): {
+    deletedChallan?: DeliveryChallan;
+    updatedInvoice?: Invoice;
+    updatedProducts: Product[];
+  } {
+    const challans = this.getDeliveryChallans();
+    const target = challans.find((ch) => ch.id === challanId);
+    if (!target) {
+      return { updatedProducts: [] };
+    }
+
+    const remaining = challans.filter((ch) => ch.id !== challanId);
+    this.saveDeliveryChallans(remaining);
+
+    // Restore stock for deleted delivery challan items
+    const products = this.getProducts();
+    const updatedProducts: Product[] = [];
+    target.items.forEach((it) => {
+      const pIdx = products.findIndex((p) => p.id === it.productId);
+      if (pIdx !== -1) {
+        products[pIdx].stockBox = Math.round(((products[pIdx].stockBox || 0) + (it.box || 0)) * 100) / 100;
+        products[pIdx].stockPiece = Math.round(((products[pIdx].stockPiece || 0) + (it.piece || 0)) * 100) / 100;
+        products[pIdx].stockSft = Math.round(((products[pIdx].stockSft || 0) + (it.sft || 0)) * 100) / 100;
+        updatedProducts.push(products[pIdx]);
+      }
+    });
+    if (updatedProducts.length > 0) {
+      this.saveProducts(products);
+    }
+
+    // Recompute parent invoice deliveryStatus
+    const invoices = this.getInvoices();
+    const invIdx = invoices.findIndex((i) => i.no === target.invoiceNo);
+    let updatedInvoice: Invoice | undefined;
+    if (invIdx !== -1) {
+      const statusObj = this.getInvoiceDeliveryStatus(target.invoiceNo, invoices[invIdx], remaining);
+      invoices[invIdx].deliveryStatus = statusObj.status;
+      updatedInvoice = invoices[invIdx];
+      this.saveInvoices(invoices);
+    }
+
+    return {
+      deletedChallan: target,
+      updatedInvoice,
+      updatedProducts,
+    };
   }
 
   // Calculate detailed Delivery Status for an Invoice

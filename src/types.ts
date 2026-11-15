@@ -118,6 +118,8 @@ export interface StaffPermissions {
   canAccessStock: boolean;         // স্টক ও চালান মেনু
   canDispatchDelivery: boolean;    // চালান ডেলিভারি পাঠানো
   canStockIn: boolean;             // ভেন্ডর স্টক ইন
+  canDeletePendingChallan: boolean; // পেন্ডিং চালান ডিলিট
+  canDeleteDeliveryChallan: boolean; // ডেলিভারি চালান ইতিহাস ডিলিট
   canManageCustomers: boolean;     // গ্রাহক যোগ ও এডিট
   canDeleteCustomers: boolean;     // গ্রাহক ডিলিট
   canManageProducts: boolean;      // পণ্য এন্ট্রি ও দর

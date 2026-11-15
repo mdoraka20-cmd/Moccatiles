@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppUser, Customer, DealerDeal, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
+import { AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
 import { StorageService, defaultStaffPermissions } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import {
@@ -39,6 +39,8 @@ interface AdminControlViewProps {
   txns?: Txn[];
   notice?: NoticeBanner;
   onUpdateNotice?: (notice: NoticeBanner) => void;
+  onDeletePendingChallan?: (invoiceNo: number) => void;
+  onDeleteDeliveryChallan?: (challanId: number) => void;
   onDataChanged: () => void;
 }
 
@@ -53,6 +55,8 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   txns: propTxns,
   notice: propNotice,
   onUpdateNotice,
+  onDeletePendingChallan,
+  onDeleteDeliveryChallan,
   onDataChanged,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'notice' | 'data_control'>('users');
@@ -90,6 +94,10 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   const [dataErrorMsg, setDataErrorMsg] = useState('');
   const [isDataBusy, setIsDataBusy] = useState(false);
   const [selectedDeleteTargets, setSelectedDeleteTargets] = useState<string[]>([]);
+  const [pendingChallanSearch, setPendingChallanSearch] = useState('');
+  const [pendingChallanDeleteTarget, setPendingChallanDeleteTarget] = useState<Invoice | null>(null);
+  const [deliveryHistorySearch, setDeliveryHistorySearch] = useState('');
+  const [deliveryHistoryDeleteTarget, setDeliveryHistoryDeleteTarget] = useState<DeliveryChallan | null>(null);
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
     isOpen: boolean;
     targets: string[];
@@ -537,6 +545,60 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       setIsDataBusy(false);
     }
   };
+
+  const executeDeleteSinglePendingChallan = (inv: Invoice) => {
+    setDataErrorMsg('');
+    if (onDeletePendingChallan) {
+      onDeletePendingChallan(inv.no);
+    } else {
+      const updated = StorageService.getInvoices().filter((i) => i.no !== inv.no);
+      StorageService.saveInvoices(updated);
+      FirestoreSyncService.syncDeleteInvoice(inv.no).catch(console.error);
+      FirestoreSyncService.syncDeleteDeliveryChallansByInvoice(inv.no).catch(console.error);
+    }
+    setPendingChallanDeleteTarget(null);
+    onDataChanged();
+    setDataStatusMsg(`পেন্ডিং চালান #${inv.no} (${inv.custName}) সফলভাবে মুছে ফেলা হয়েছে এবং ক্লাউডে সিঙ্ক হয়েছে।`);
+    setTimeout(() => setDataStatusMsg(''), 5000);
+  };
+
+  const executeDeleteSingleDeliveryHistory = (ch: DeliveryChallan) => {
+    setDataErrorMsg('');
+    if (onDeleteDeliveryChallan) {
+      onDeleteDeliveryChallan(ch.id);
+    } else {
+      FirestoreSyncService.syncDeleteDeliveryChallan(ch.id).catch(console.error);
+      onDataChanged();
+    }
+    setDeliveryHistoryDeleteTarget(null);
+    setDataStatusMsg(`ডেলিভারি চালান ${ch.challanNo} (${ch.custName}) ইতিহাস থেকে মুছে ফেলা হয়েছে এবং স্টক ও ক্লাউড ডাটাবেস আপডেট হয়েছে।`);
+    setTimeout(() => setDataStatusMsg(''), 5000);
+  };
+
+  const deliveryChallansHistoryList = StorageService.getDeliveryChallans().filter((ch) => {
+    const q = deliveryHistorySearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      ch.challanNo.toLowerCase().includes(q) ||
+      String(ch.invoiceNo).includes(q) ||
+      ch.custName.toLowerCase().includes(q) ||
+      (ch.phone && ch.phone.includes(q)) ||
+      (ch.vehicleNo && ch.vehicleNo.toLowerCase().includes(q))
+    );
+  });
+
+  const pendingChallansList = invoices.filter((inv) => {
+    const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
+    if (statusObj.isFullyDelivered) return false;
+    const q = pendingChallanSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      String(inv.no).includes(q) ||
+      inv.custName.toLowerCase().includes(q) ||
+      (inv.phone && inv.phone.includes(q)) ||
+      (inv.deal && inv.deal.toLowerCase().includes(q))
+    );
+  });
 
   const deleteCatalogOptions: Array<{ key: string; label: string; count: number; desc: string }> = [
     { key: 'invoices', label: 'বিক্রয় চালান / মেমু (Invoices)', count: invoices.length, desc: 'সকল বিক্রয়ের বিল ও মেমু' },
@@ -1205,6 +1267,34 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
                       className="w-4 h-4 mt-0.5 accent-emerald-600 cursor-pointer"
                     />
                   </label>
+
+                  {/* canDeletePendingChallan */}
+                  <label className="flex items-start justify-between gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition">
+                    <div>
+                      <div className="font-bold text-rose-700">পেন্ডিং চালান ডিলিট করা</div>
+                      <div className="text-[11px] text-slate-500">পেন্ডিং বা আংশিক ডেলিভারি চালান সরাসরি মুছে ফেলার অনুমতি</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(staffPerms.canDeletePendingChallan)}
+                      onChange={() => handleTogglePerm('canDeletePendingChallan')}
+                      className="w-4 h-4 mt-0.5 accent-rose-600 cursor-pointer"
+                    />
+                  </label>
+
+                  {/* canDeleteDeliveryChallan */}
+                  <label className="flex items-start justify-between gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition">
+                    <div>
+                      <div className="font-bold text-rose-700">ডেলিভারি চালান ইতিহাস ডিলিট করা</div>
+                      <div className="text-[11px] text-slate-500">ডেলিভারি চালান ও ট্রিপ ইতিহাস তালিকা থেকে চালান মুছে ফেলার অনুমতি</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(staffPerms.canDeleteDeliveryChallan)}
+                      onChange={() => handleTogglePerm('canDeleteDeliveryChallan')}
+                      className="w-4 h-4 mt-0.5 accent-rose-600 cursor-pointer"
+                    />
+                  </label>
                 </div>
               </div>
 
@@ -1635,6 +1725,173 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Pending Challans Single Delete Manager Card */}
+            <div className="bg-white rounded-lg border border-amber-300 p-4 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-amber-200">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-amber-600" />
+                    পেন্ডিং চালান ডিলিট ম্যানেজার (Pending Challans) — {pendingChallansList.length} টি
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    যেসব চালান এখনো সম্পূর্ণ ডেলিভারি হয়নি (পেন্ডিং বা আংশিক ডেলিভারি), সেগুলো এখান থেকে সরাসরি এক-একটি করে ডিলিট করতে পারবেন।
+                  </p>
+                </div>
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                  <input
+                    type="text"
+                    value={pendingChallanSearch}
+                    onChange={(e) => setPendingChallanSearch(e.target.value)}
+                    placeholder="চালান নং, গ্রাহক বা ফোন খুঁজুন..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded pl-8 pr-2 py-1.5 text-slate-800 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-64 border border-slate-200 rounded">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
+                    <tr>
+                      <th className="p-2 text-center w-20">চালান নং</th>
+                      <th className="p-2 w-24">তারিখ</th>
+                      <th className="p-2">গ্রাহকের নাম ও মোবাইল</th>
+                      <th className="p-2 text-center w-28">স্ট্যাটাস</th>
+                      <th className="p-2 text-right w-28">অবশিষ্ট বাকি</th>
+                      <th className="p-2 text-center w-24">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingChallansList.map((inv) => {
+                      const st = StorageService.getInvoiceDeliveryStatus(inv.no);
+                      return (
+                        <tr key={inv.no} className="hover:bg-slate-50">
+                          <td className="p-2 text-center font-mono font-bold text-slate-900">#{inv.no}</td>
+                          <td className="p-2 font-mono text-slate-600">{inv.date?.slice(0, 10)}</td>
+                          <td className="p-2">
+                            <div className="font-bold text-slate-800">{inv.custName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">{inv.phone || inv.address || '—'}</div>
+                          </td>
+                          <td className="p-2 text-center">
+                            {st.status === 'partial' ? (
+                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold">
+                                আংশিক ডেলিভারি
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-bold">
+                                পেন্ডিং
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-2 text-right font-mono font-bold text-rose-700">
+                            {st.remainingTotalBox}B / {st.remainingTotalPiece}P
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setPendingChallanDeleteTarget(inv)}
+                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-300 rounded font-bold transition cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              ডিলিট
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {pendingChallansList.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-slate-400">
+                          কোনো পেন্ডিং চালান নেই
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Delivery Challan History Single Delete Manager Card */}
+            <div className="bg-white rounded-lg border border-indigo-300 p-4 shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-indigo-200">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-indigo-700" />
+                    ডেলিভারি চালান ইতিহাস ডিলিট ম্যানেজার (Delivery Challans History) — {deliveryChallansHistoryList.length} টি
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    ইতিপূর্বে ডেলিভারি হওয়া চালানগুলোর ইতিহাস এখান থেকে এক-একটি করে ডিলিট করতে পারবেন (ডিলিট করলে পণ্যের স্টক ও ইনভয়েস স্ট্যাটাস স্বয়ংক্রিয়ভাবে সমন্বয় হবে)।
+                  </p>
+                </div>
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                  <input
+                    type="text"
+                    value={deliveryHistorySearch}
+                    onChange={(e) => setDeliveryHistorySearch(e.target.value)}
+                    placeholder="চালান নং, ইনভয়েস, গ্রাহক বা গাড়ি..."
+                    className="w-full bg-slate-50 border border-slate-300 rounded pl-8 pr-2 py-1.5 text-slate-800 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto max-h-64 border border-slate-200 rounded">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
+                    <tr>
+                      <th className="p-2 text-center w-28">Challan No</th>
+                      <th className="p-2 text-center w-20">Invoice</th>
+                      <th className="p-2 w-28">তারিখ</th>
+                      <th className="p-2">গ্রাহকের নাম ও গাড়ি</th>
+                      <th className="p-2 text-right w-32">ডেলিভারি পরিমাণ</th>
+                      <th className="p-2 text-center w-24">অ্যাকশন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {deliveryChallansHistoryList.map((ch) => {
+                      const totBox = ch.items.reduce((s, it) => s + (it.box || 0), 0);
+                      const totPc = ch.items.reduce((s, it) => s + (it.piece || 0), 0);
+                      const totSft = ch.items.reduce((s, it) => s + (it.sft || 0), 0);
+                      return (
+                        <tr key={ch.id} className="hover:bg-slate-50">
+                          <td className="p-2 text-center font-mono font-bold text-emerald-900">{ch.challanNo}</td>
+                          <td className="p-2 text-center font-mono font-bold text-slate-700">#{ch.invoiceNo}</td>
+                          <td className="p-2 font-mono text-slate-600">{ch.date?.slice(0, 16)}</td>
+                          <td className="p-2">
+                            <div className="font-bold text-slate-800">{ch.custName}</div>
+                            <div className="text-[10px] text-slate-500">
+                              {ch.vehicleNo || '—'} {ch.driverName && ch.driverName !== '—' ? `• ${ch.driverName}` : ''}
+                            </div>
+                          </td>
+                          <td className="p-2 text-right font-mono font-bold text-emerald-800">
+                            {totBox}B / {totPc}P
+                            <span className="block text-[10px] text-slate-500 font-normal">({totSft.toFixed(2)} Sft)</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setDeliveryHistoryDeleteTarget(ch)}
+                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-300 rounded font-bold transition cursor-pointer inline-flex items-center gap-1"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              ডিলিট
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {deliveryChallansHistoryList.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="p-6 text-center text-slate-400">
+                          কোনো ডেলিভারি চালান ইতিহাস নেই
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1683,6 +1940,105 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   {isDataBusy ? 'মুছে ফেলা হচ্ছে...' : 'হ্যাঁ, স্থায়ীভাবে মুছে ফেলুন'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single Pending Challan Delete Confirmation Modal */}
+      {pendingChallanDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-rose-300 overflow-hidden text-xs">
+            <div className="bg-rose-900 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <h3 className="font-bold text-sm">পেন্ডিং চালান ডিলিট নিশ্চিতকরণ</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingChallanDeleteTarget(null)}
+                className="text-rose-200 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-slate-700 leading-relaxed font-medium">
+                আপনি কি নিশ্চিতভাবে পেন্ডিং চালান <strong>#{pendingChallanDeleteTarget.no}</strong> (গ্রাহক:{' '}
+                <strong>{pendingChallanDeleteTarget.custName}</strong>) স্থায়ীভাবে মুছে ফেলতে চান?
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-[11px] text-amber-900">
+                সতর্কতা: এটি ডিলিট করলে সংশ্লিষ্ট চালান এবং এর সাথে যুক্ত পেন্ডিং ডেলিভারি রেকর্ড স্থায়ীভাবে মুছে যাবে।
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setPendingChallanDeleteTarget(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                >
+                  বাতিল করুন
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeDeleteSinglePendingChallan(pendingChallanDeleteTarget)}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded font-bold cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  হ্যাঁ, স্থায়ীভাবে মুছে ফেলুন
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single Delivery Challan History Delete Confirmation Modal */}
+      {deliveryHistoryDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-rose-300 overflow-hidden text-xs">
+            <div className="bg-rose-900 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <h3 className="font-bold text-sm">ডেলিভারি চালান ইতিহাস ডিলিট নিশ্চিতকরণ</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeliveryHistoryDeleteTarget(null)}
+                className="text-rose-200 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-slate-700 leading-relaxed font-medium">
+                আপনি কি নিশ্চিতভাবে ডেলিভারি চালান <strong>{deliveryHistoryDeleteTarget.challanNo}</strong> (ইনভয়েস{' '}
+                <strong>#{deliveryHistoryDeleteTarget.invoiceNo}</strong>, গ্রাহক:{' '}
+                <strong>{deliveryHistoryDeleteTarget.custName}</strong>) ইতিহাস থেকে স্থায়ীভাবে মুছে ফেলতে চান?
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-[11px] text-amber-900">
+                সতর্কতা: এটি মুছে ফেললে এই চালানের ডেলিভারি করা পণ্যের স্টক পুনরায় গোডাউন স্টকে যোগ হবে এবং ইনভয়েসের ডেলিভারি স্ট্যাটাস আপডেট হবে।
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDeliveryHistoryDeleteTarget(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                >
+                  বাতিল করুন
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeDeleteSingleDeliveryHistory(deliveryHistoryDeleteTarget)}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded font-bold cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  হ্যাঁ, স্থায়ীভাবে মুছে ফেলুন
                 </button>
               </div>
             </div>

@@ -23,7 +23,7 @@ import {
   StaffPermissions,
   NoticeBanner,
 } from '../types';
-import { StorageService } from './storage';
+import { StorageService, defaultStaffPermissions } from './storage';
 
 export class FirestoreSyncService {
   private static isInitialized = false;
@@ -231,8 +231,9 @@ export class FirestoreSyncService {
             if (callbacks.onVendorsUpdate) callbacks.onVendorsUpdate(data.vendors);
           }
           if (data.staffPerms) {
-            StorageService.saveStaffPermissions(data.staffPerms);
-            if (callbacks.onStaffPermsUpdate) callbacks.onStaffPermsUpdate(data.staffPerms);
+            const mergedPerms: StaffPermissions = { ...defaultStaffPermissions, ...data.staffPerms };
+            StorageService.saveStaffPermissions(mergedPerms);
+            if (callbacks.onStaffPermsUpdate) callbacks.onStaffPermsUpdate(mergedPerms);
           }
         }
       },
@@ -363,6 +364,56 @@ export class FirestoreSyncService {
       await deleteDoc(doc(db, 'invoices', String(no)));
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  }
+
+  // Delete a single Delivery Challan history entry, restore stock & update invoice status in Firestore
+  static async syncDeleteDeliveryChallan(challanId: number) {
+    const { deletedChallan, updatedInvoice, updatedProducts } = StorageService.deleteDeliveryChallan(challanId);
+    if (!deletedChallan) return;
+
+    const path = `deliveryChallans/${challanId}`;
+    try {
+      await deleteDoc(doc(db, 'deliveryChallans', String(challanId)));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+
+    if (updatedInvoice) {
+      const invPath = `invoices/${updatedInvoice.no}`;
+      try {
+        await setDoc(doc(db, 'invoices', String(updatedInvoice.no)), updatedInvoice);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, invPath);
+      }
+    }
+
+    for (const prod of updatedProducts) {
+      const prodPath = `products/${prod.id}`;
+      try {
+        await setDoc(doc(db, 'products', String(prod.id)), prod);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, prodPath);
+      }
+    }
+  }
+
+  // Delete all Delivery Challans associated with a deleted Invoice / Pending Challan
+  static async syncDeleteDeliveryChallansByInvoice(invoiceNo: number) {
+    const allChallans = StorageService.getDeliveryChallans();
+    const toDelete = allChallans.filter((ch) => ch.invoiceNo === invoiceNo);
+    if (toDelete.length === 0) return;
+
+    const remaining = allChallans.filter((ch) => ch.invoiceNo !== invoiceNo);
+    StorageService.saveDeliveryChallans(remaining);
+
+    for (const ch of toDelete) {
+      const path = `deliveryChallans/${ch.id}`;
+      try {
+        await deleteDoc(doc(db, 'deliveryChallans', String(ch.id)));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, path);
+      }
     }
   }
 

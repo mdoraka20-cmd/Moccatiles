@@ -30,6 +30,7 @@ import {
   X,
   FileText,
   Lock,
+  Trash2,
 } from 'lucide-react';
 import { ProductSearchSelect } from './ProductSearchSelect';
 
@@ -47,6 +48,9 @@ interface StockInventoryViewProps {
   }) => void;
   currentUser?: AppUser;
   permissions?: StaffPermissions;
+  onDeletePendingChallan?: (invoiceNo: number) => void;
+  onDeleteDeliveryChallan?: (challanId: number) => void;
+  onRequireAdminAuth?: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
 }
 
 export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
@@ -57,6 +61,9 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   onOpenPrintModal,
   currentUser,
   permissions,
+  onDeletePendingChallan,
+  onDeleteDeliveryChallan,
+  onRequireAdminAuth,
 }) => {
   const [subTab, setSubTab] = useState<'overview' | 'stock_in' | 'pending_challan' | 'challan_history'>('pending_challan');
 
@@ -99,13 +106,68 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   const [deliveryNote, setDeliveryNote] = useState('');
 
   const [feedbackMsg, setFeedbackMsg] = useState('');
+  const [deleteChallanTarget, setDeleteChallanTarget] = useState<Invoice | null>(null);
+  const [deleteDeliveryHistoryTarget, setDeleteDeliveryHistoryTarget] = useState<DeliveryChallan | null>(null);
 
   const canDispatch = currentUser?.role === 'admin' || (permissions ? permissions.canDispatchDelivery : true);
   const canStockIn = currentUser?.role === 'admin' || (permissions ? permissions.canStockIn : true);
+  const canDeletePending =
+    currentUser?.role === 'admin' || Boolean(permissions?.canDeletePendingChallan);
+  const canDeleteDeliveryHistory =
+    currentUser?.role === 'admin' || Boolean(permissions?.canDeleteDeliveryChallan);
 
   const showMsg = (msg: string) => {
     setFeedbackMsg(msg);
     setTimeout(() => setFeedbackMsg(''), 4000);
+  };
+
+  const executeDeletePendingChallan = (inv: Invoice) => {
+    if (onDeletePendingChallan) {
+      onDeletePendingChallan(inv.no);
+    } else {
+      const updated = StorageService.getInvoices().filter((i) => i.no !== inv.no);
+      StorageService.saveInvoices(updated);
+      FirestoreSyncService.syncDeleteInvoice(inv.no).catch(console.error);
+      FirestoreSyncService.syncDeleteDeliveryChallansByInvoice(inv.no).catch(console.error);
+    }
+    setDeleteChallanTarget(null);
+    onStockUpdated();
+    showMsg(`পেন্ডিং চালান #${inv.no} সফলভাবে মুছে ফেলা হয়েছে!`);
+  };
+
+  const handleDeletePendingChallanClick = (inv: Invoice) => {
+    if (canDeletePending) {
+      setDeleteChallanTarget(inv);
+    } else if (onRequireAdminAuth) {
+      onRequireAdminAuth(
+        `পেন্ডিং চালান #${inv.no} মুছে ফেলা`,
+        () => executeDeletePendingChallan(inv),
+        `গ্রাহক: ${inv.custName} | তারিখ: ${inv.date?.slice(0, 10)}`
+      );
+    }
+  };
+
+  const executeDeleteDeliveryHistory = (ch: DeliveryChallan) => {
+    if (onDeleteDeliveryChallan) {
+      onDeleteDeliveryChallan(ch.id);
+    } else {
+      FirestoreSyncService.syncDeleteDeliveryChallan(ch.id).catch(console.error);
+      onStockUpdated();
+    }
+    setDeleteDeliveryHistoryTarget(null);
+    showMsg(`ডেলিভারি চালান ${ch.challanNo} মুছে ফেলা হয়েছে এবং স্টক সমন্বয় করা হয়েছে!`);
+  };
+
+  const handleDeleteDeliveryHistoryClick = (ch: DeliveryChallan) => {
+    if (canDeleteDeliveryHistory) {
+      setDeleteDeliveryHistoryTarget(ch);
+    } else if (onRequireAdminAuth) {
+      onRequireAdminAuth(
+        `ডেলিভারি চালান ${ch.challanNo} মুছে ফেলা`,
+        () => executeDeleteDeliveryHistory(ch),
+        `ইনভয়েস #${ch.invoiceNo} | গ্রাহক: ${ch.custName}`
+      );
+    }
   };
 
   // ================= Stock In Helpers =================
@@ -590,6 +652,23 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                           >
                             <Printer className="w-3.5 h-3.5" />
                           </button>
+                          {!isDelivered && (
+                            <button
+                              onClick={() => handleDeletePendingChallanClick(inv)}
+                              title={
+                                canDeletePending
+                                  ? 'পেন্ডিং চালান ডিলিট করুন'
+                                  : 'ডিলিট করতে এডমিন অনুমতি বা পাসওয়ার্ড প্রয়োজন'
+                              }
+                              className={`p-1 rounded border cursor-pointer transition ${
+                                canDeletePending
+                                  ? 'bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border-rose-300'
+                                  : 'bg-slate-100 hover:bg-amber-50 text-slate-500 hover:text-amber-700 border-slate-300'
+                              }`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -987,7 +1066,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                   <th className="p-2">Cust. Deal</th>
                   <th className="p-2">গাড়ি ও ড্রাইভার</th>
                   <th className="p-2 text-right w-28">ডেলিভারি পরিমাণ</th>
-                  <th className="p-2 text-center w-20">প্রিন্ট</th>
+                  <th className="p-2 text-center w-28">প্রিন্ট ও অ্যাকশন</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1019,19 +1098,36 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                         <span className="text-[10px] text-slate-500 font-normal">({totSft.toFixed(2)} Sft)</span>
                       </td>
                       <td className="p-2 text-center">
-                        <button
-                          onClick={() => {
-                            onOpenPrintModal({
-                              isOpen: true,
-                              type: 'delivery_challan',
-                              deliveryChallan: ch,
-                            });
-                          }}
-                          className="px-2.5 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded font-bold cursor-pointer transition shadow-xs inline-flex items-center gap-1 text-[11px]"
-                        >
-                          <Printer className="w-3 h-3" />
-                          চালান
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              onOpenPrintModal({
+                                isOpen: true,
+                                type: 'delivery_challan',
+                                deliveryChallan: ch,
+                              });
+                            }}
+                            className="px-2.5 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded font-bold cursor-pointer transition shadow-xs inline-flex items-center gap-1 text-[11px]"
+                          >
+                            <Printer className="w-3 h-3" />
+                            চালান
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDeliveryHistoryClick(ch)}
+                            title={
+                              canDeleteDeliveryHistory
+                                ? 'ডেলিভারি চালান ইতিহাস ডিলিট করুন'
+                                : 'ডিলিট করতে এডমিন অনুমতি বা পাসওয়ার্ড প্রয়োজন'
+                            }
+                            className={`p-1 rounded border cursor-pointer transition ${
+                              canDeleteDeliveryHistory
+                                ? 'bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border-rose-300'
+                                : 'bg-slate-100 hover:bg-amber-50 text-slate-500 hover:text-amber-700 border-slate-300'
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1214,6 +1310,105 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                 <Check className="w-4 h-4" />
                 ডেলিভারি চালান তৈরি ও স্টক আউট করুন
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= DELETE PENDING CHALLAN CONFIRMATION MODAL ================= */}
+      {deleteChallanTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-rose-300 overflow-hidden text-xs">
+            <div className="bg-rose-900 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <h3 className="font-bold text-sm">পেন্ডিং চালান ডিলিট নিশ্চিতকরণ</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteChallanTarget(null)}
+                className="text-rose-200 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-slate-700 leading-relaxed font-medium">
+                আপনি কি নিশ্চিতভাবে পেন্ডিং চালান <strong>#{deleteChallanTarget.no}</strong> (গ্রাহক:{' '}
+                <strong>{deleteChallanTarget.custName}</strong>) স্থায়ীভাবে মুছে ফেলতে চান?
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-[11px] text-amber-900">
+                সতর্কতা: এই চালানের সাথে যুক্ত বিল ও পেন্ডিং ডেলিভারি তালিকা থেকে রেকর্ডটি মুছে যাবে এবং ক্লাউডে সিঙ্ক হবে।
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDeleteChallanTarget(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeDeletePendingChallan(deleteChallanTarget)}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded font-bold cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  হ্যাঁ, ডিলিট করুন
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= DELETE DELIVERY HISTORY CHALLAN CONFIRMATION MODAL ================= */}
+      {deleteDeliveryHistoryTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-rose-300 overflow-hidden text-xs">
+            <div className="bg-rose-900 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <h3 className="font-bold text-sm">ডেলিভারি চালান ইতিহাস ডিলিট নিশ্চিতকরণ</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteDeliveryHistoryTarget(null)}
+                className="text-rose-200 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className="text-slate-700 leading-relaxed font-medium">
+                আপনি কি নিশ্চিতভাবে ডেলিভারি চালান <strong>{deleteDeliveryHistoryTarget.challanNo}</strong> (ইনভয়েস{' '}
+                <strong>#{deleteDeliveryHistoryTarget.invoiceNo}</strong>, গ্রাহক:{' '}
+                <strong>{deleteDeliveryHistoryTarget.custName}</strong>) ইতিহাস থেকে স্থায়ীভাবে মুছে ফেলতে চান?
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-[11px] text-amber-900">
+                সতর্কতা: এটি মুছে ফেললে এই চালানের ডেলিভারি করা পণ্যের স্টক পুনরায় গোডাউন স্টকে যোগ হবে এবং ইনভয়েসের ডেলিভারি স্ট্যাটাস আপডেট হবে।
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setDeleteDeliveryHistoryTarget(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                >
+                  বাতিল
+                </button>
+                <button
+                  type="button"
+                  onClick={() => executeDeleteDeliveryHistory(deleteDeliveryHistoryTarget)}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded font-bold cursor-pointer transition flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  হ্যাঁ, ডিলিট করুন
+                </button>
+              </div>
             </div>
           </div>
         </div>
