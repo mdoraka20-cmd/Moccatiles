@@ -81,6 +81,7 @@ export default function App() {
   const [txns, setTxns] = useState<Txn[]>(() => StorageService.getTxns());
   const [users, setUsers] = useState<AppUser[]>(() => StorageService.getUsers());
   const [dealers, setDealers] = useState<DealerDeal[]>(() => StorageService.getDealers());
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(() => StorageService.getPaymentMethods());
   const [notice, setNotice] = useState<NoticeBanner>(() => StorageService.getNotice());
   const [contactsInfo, setContactsInfo] = useState<ContactsInfo>(() => StorageService.getContactsInfo());
 
@@ -180,6 +181,7 @@ export default function App() {
       onDeliveriesUpdate: () => refreshAllData(),
       onCategoriesUpdate: () => refreshAllData(),
       onVendorsUpdate: () => refreshAllData(),
+      onPaymentMethodsUpdate: (methods) => setPaymentMethods(methods),
       onStaffPermsUpdate: (perms) => setStaffPermissions(perms),
       onNoticeUpdate: (newNotice) => setNotice(newNotice),
       onContactsUpdate: (newContacts) => setContactsInfo(newContacts),
@@ -197,6 +199,7 @@ export default function App() {
     setTxns(StorageService.getTxns());
     setUsers(StorageService.getUsers());
     setDealers(StorageService.getDealers());
+    setPaymentMethods(StorageService.getPaymentMethods());
     setNotice(StorageService.getNotice());
     setContactsInfo(StorageService.getContactsInfo());
     if (StorageService.isUserLoggedIn()) {
@@ -510,6 +513,8 @@ export default function App() {
           <PayReceiptView
             customers={customers}
             payments={payments}
+            paymentMethods={paymentMethods}
+            onPaymentMethodsChanged={(methods) => setPaymentMethods(methods)}
             currentUser={currentUser}
             onSavePayment={handleSavePayment}
             onDeletePayment={handleDeletePayment}

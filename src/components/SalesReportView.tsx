@@ -228,16 +228,45 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
           invDueSum += due;
         });
 
-        // Received by table
-        const cashTotal =
-          invs.reduce((s, v) => s + (v.cash || 0), 0) +
-          pays.filter((p) => p.method === 'Cash' || !p.method).reduce((s, p) => s + (p.amount || 0), 0);
-        const bankTotal =
-          invs.reduce((s, v) => s + (v.bank || 0), 0) +
-          pays.filter((p) => p.method === 'Bank').reduce((s, p) => s + (p.amount || 0), 0);
-        const bkashTotal =
-          invs.reduce((s, v) => s + (v.bkash || 0), 0) +
-          pays.filter((p) => p.method === 'Bkash').reduce((s, p) => s + (p.amount || 0), 0);
+        // Received by table (core channels + any configured/used custom methods)
+        const invCashTotal = invs.reduce((s, v) => s + (v.cash || 0), 0);
+        const payCashTotal = pays.filter((p) => p.method === 'Cash' || !p.method).reduce((s, p) => s + (p.amount || 0), 0);
+        const cashTotal = invCashTotal + payCashTotal;
+
+        const invBankTotal = invs.reduce((s, v) => s + (v.bank || 0), 0);
+        const payBankTotal = pays.filter((p) => p.method === 'Bank').reduce((s, p) => s + (p.amount || 0), 0);
+        const bankTotal = invBankTotal + payBankTotal;
+
+        const invBkashTotal = invs.reduce((s, v) => s + (v.bkash || 0), 0);
+        const payBkashTotal = pays.filter((p) => p.method === 'Bkash').reduce((s, p) => s + (p.amount || 0), 0);
+        const bkashTotal = invBkashTotal + payBkashTotal;
+
+        const coreSet = new Set(['cash', 'bank', 'bkash']);
+        const configuredMethods = StorageService.getPaymentMethods();
+        const usedCustomMethods = pays
+          .map((p) => (p.method || '').trim())
+          .filter((m) => m.length > 0 && !coreSet.has(m.toLowerCase()));
+        const customMethodsMap = new Map<string, string>();
+        [...configuredMethods, ...usedCustomMethods].forEach((m) => {
+          const trimmed = m.trim();
+          if (trimmed && !coreSet.has(trimmed.toLowerCase()) && !customMethodsMap.has(trimmed.toLowerCase())) {
+            customMethodsMap.set(trimmed.toLowerCase(), trimmed);
+          }
+        });
+
+        let customMethodsGrandTotal = 0;
+        const customMethodRows: string[][] = Array.from(customMethodsMap.values()).map((methodName) => {
+          const payAmt = pays
+            .filter((p) => (p.method || '').trim().toLowerCase() === methodName.toLowerCase())
+            .reduce((s, p) => s + (p.amount || 0), 0);
+          customMethodsGrandTotal += payAmt;
+          return [
+            methodName,
+            formatMoney(0),
+            formatMoney(payAmt),
+            formatMoney(payAmt),
+          ];
+        });
 
         const incomeSum = txns
           .filter((t) => t.isIncome && (!dateFrom || t.date >= dateFrom) && (!dateTo || t.date <= dateTo))
@@ -272,24 +301,25 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
               rows: [
                 [
                   'নগদ (Cash)',
-                  formatMoney(invs.reduce((s, v) => s + (v.cash || 0), 0)),
-                  formatMoney(pays.filter((p) => p.method === 'Cash' || !p.method).reduce((s, p) => s + p.amount, 0)),
+                  formatMoney(invCashTotal),
+                  formatMoney(payCashTotal),
                   formatMoney(cashTotal),
                 ],
                 [
                   'ব্যাংক (Bank)',
-                  formatMoney(invs.reduce((s, v) => s + (v.bank || 0), 0)),
-                  formatMoney(pays.filter((p) => p.method === 'Bank').reduce((s, p) => s + p.amount, 0)),
+                  formatMoney(invBankTotal),
+                  formatMoney(payBankTotal),
                   formatMoney(bankTotal),
                 ],
                 [
                   'বিকাশ (bKash)',
-                  formatMoney(invs.reduce((s, v) => s + (v.bkash || 0), 0)),
-                  formatMoney(pays.filter((p) => p.method === 'Bkash').reduce((s, p) => s + p.amount, 0)),
+                  formatMoney(invBkashTotal),
+                  formatMoney(payBkashTotal),
                   formatMoney(bkashTotal),
                 ],
+                ...customMethodRows,
               ],
-              total: ['সর্বমোট =', '', '', `৳ ${formatMoney(cashTotal + bankTotal + bkashTotal)}`],
+              total: ['সর্বমোট =', '', '', `৳ ${formatMoney(cashTotal + bankTotal + bkashTotal + customMethodsGrandTotal)}`],
             },
           ],
           summary: [
@@ -455,7 +485,14 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
               invoiceNo: invMatch,
               payDate: formatDateDDMMYY(p.date),
               rawDate: p.date || '',
-              paymentType: p.method === 'Bank' ? 'Bank Deposit' : p.method === 'Bkash' ? 'bKash Deposit' : 'Cash Deposit',
+              paymentType:
+                p.method === 'Bank'
+                  ? 'Bank Deposit'
+                  : p.method === 'Bkash'
+                  ? 'bKash Deposit'
+                  : !p.method || p.method === 'Cash'
+                  ? 'Cash Deposit'
+                  : `${p.method} Deposit`,
               particulars: p.remark ? p.remark : invMatch ? `(${invMatch}) Cash in Hand` : 'Cash in Hand',
               debit: 0,
               credit: p.amount || 0,

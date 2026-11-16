@@ -63,6 +63,7 @@ export class FirestoreSyncService {
     onDeliveriesUpdate?: (challans: DeliveryChallan[]) => void;
     onCategoriesUpdate?: (categories: string[]) => void;
     onVendorsUpdate?: (vendors: string[]) => void;
+    onPaymentMethodsUpdate?: (methods: string[]) => void;
     onStaffPermsUpdate?: (perms: StaffPermissions) => void;
     onNoticeUpdate?: (notice: NoticeBanner) => void;
     onContactsUpdate?: (contacts: ContactsInfo) => void;
@@ -236,6 +237,12 @@ export class FirestoreSyncService {
             if (Array.isArray(data.vendors)) {
               StorageService.saveVendors(data.vendors);
               if (callbacks.onVendorsUpdate) callbacks.onVendorsUpdate(data.vendors);
+            }
+            if (Array.isArray(data.paymentMethods)) {
+              StorageService.savePaymentMethods(data.paymentMethods);
+              if (callbacks.onPaymentMethodsUpdate) {
+                callbacks.onPaymentMethodsUpdate(StorageService.getPaymentMethods());
+              }
             }
             if (data.staffPerms) {
               const mergedPerms: StaffPermissions = { ...defaultStaffPermissions, ...data.staffPerms };
@@ -669,15 +676,22 @@ export class FirestoreSyncService {
     }
   }
 
-  // Sync Metadata lists (Categories, Vendors, Staff Permissions)
-  static async syncMetadataLists(categories?: string[], vendors?: string[], staffPerms?: StaffPermissions) {
+  // Sync Metadata lists (Categories, Vendors, Staff Permissions, Payment Methods)
+  static async syncMetadataLists(
+    categories?: string[],
+    vendors?: string[],
+    staffPerms?: StaffPermissions,
+    paymentMethods?: string[]
+  ) {
     const currentCats = categories || StorageService.getCategories();
     const currentVendors = vendors || StorageService.getVendors();
     const currentPerms = staffPerms || StorageService.getStaffPermissions();
+    const currentPaymentMethods = paymentMethods || StorageService.getPaymentMethods();
 
     if (categories) StorageService.saveCategories(currentCats);
     if (vendors) StorageService.saveVendors(currentVendors);
     if (staffPerms) StorageService.saveStaffPermissions(currentPerms);
+    if (paymentMethods) StorageService.savePaymentMethods(currentPaymentMethods);
     StorageService.notifyUpdate();
 
     const path = 'metadata/lists';
@@ -687,6 +701,7 @@ export class FirestoreSyncService {
         sanitizeForFirestore({
           categories: currentCats,
           vendors: currentVendors,
+          paymentMethods: currentPaymentMethods,
           staffPerms: currentPerms,
           bootstrapped: true,
         })
@@ -795,6 +810,7 @@ export class FirestoreSyncService {
         sanitizeForFirestore({
           categories: StorageService.getCategories(),
           vendors: StorageService.getVendors(),
+          paymentMethods: StorageService.getPaymentMethods(),
           staffPerms: StorageService.getStaffPermissions(),
           bootstrapped: true,
         })
@@ -885,6 +901,7 @@ export class FirestoreSyncService {
           sanitizeForFirestore({
             categories: StorageService.getCategories(),
             vendors: StorageService.getVendors(),
+            paymentMethods: StorageService.getPaymentMethods(),
             staffPerms: StorageService.getStaffPermissions(),
             bootstrapped: true,
           })

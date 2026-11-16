@@ -1,12 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { Customer, Payment } from '../types';
-import { StorageService } from '../services/storage';
+import { StorageService, defaultPaymentMethods } from '../services/storage';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatMoney, parseNum, getTodayLocalDateStr, getNowLocalTimeStr } from '../utils/numberWords';
-import { Receipt, Search, Printer, Trash2, Check, RotateCcw, X } from 'lucide-react';
+import { Receipt, Search, Printer, Trash2, Check, RotateCcw, X, Plus } from 'lucide-react';
 
 interface PayReceiptViewProps {
   customers: Customer[];
   payments: Payment[];
+  paymentMethods?: string[];
+  onPaymentMethodsChanged?: (methods: string[]) => void;
   onSavePayment: (payment: Payment, print: boolean) => void;
   onDeletePayment: (id: number) => void;
   onReprintPayment: (p: Payment) => void;
@@ -17,26 +20,55 @@ interface PayReceiptViewProps {
   onRequireAdminAuth?: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
 }
 
+const getMethodDisplayLabel = (m: string): string => {
+  if (m === 'Cash') return 'Cash (নগদ)';
+  if (m === 'Bank') return 'Bank (ব্যাংক)';
+  if (m === 'Bkash') return 'bKash (বিকাশ)';
+  return m;
+};
+
 export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
   customers,
   payments,
+  paymentMethods: propMethods,
+  onPaymentMethodsChanged,
   onSavePayment,
   onDeletePayment,
   onReprintPayment,
   onOpenCustomerPicker,
   selectedCustomerFromPicker,
   onClearCustomerPicker,
-  currentUser,
   onRequireAdminAuth,
 }) => {
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [payDate, setPayDate] = useState<string>(() => getTodayLocalDateStr());
   const [amount, setAmount] = useState<string>('');
   const [discount, setDiscount] = useState<string>('');
-  const [method, setMethod] = useState<'Cash' | 'Bank' | 'Bkash'>('Cash');
+  const [method, setMethod] = useState<string>('Cash');
   const [remark, setRemark] = useState<string>('');
   const [selectedPay, setSelectedPay] = useState<Payment | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Custom payment methods management state
+  const [localMethods, setLocalMethods] = useState<string[]>(() =>
+    propMethods && propMethods.length > 0 ? propMethods : StorageService.getPaymentMethods()
+  );
+  const [showMethodManager, setShowMethodManager] = useState(false);
+  const [newMethodName, setNewMethodName] = useState('');
+
+  React.useEffect(() => {
+    if (propMethods && propMethods.length > 0) {
+      setLocalMethods(propMethods);
+    }
+  }, [propMethods]);
+
+  const availableMethods = useMemo(() => {
+    const base = localMethods.length > 0 ? localMethods : StorageService.getPaymentMethods();
+    if (method && !base.some((m) => m.toLowerCase() === method.toLowerCase())) {
+      return [...base, method];
+    }
+    return base;
+  }, [localMethods, method]);
 
   // Payment history date range filter (defaults to current date so today's receipts appear automatically)
   const [filterDateFrom, setFilterDateFrom] = useState<string>(() => getTodayLocalDateStr());
@@ -68,7 +100,18 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     }
   }, [payments, selectedPay]);
 
-  const currentDue = selectedCust ? StorageService.getCustomerBalance(selectedCust.id) : 0;
+  // Precompute live due balance per customer ID
+  const customerDueMap = useMemo(() => {
+    const map = new Map<number, number>();
+    customers.forEach((c) => {
+      map.set(c.id, StorageService.getCustomerBalance(c.id));
+    });
+    return map;
+  }, [customers, payments]);
+
+  const currentDue = selectedCust
+    ? customerDueMap.get(selectedCust.id) ?? StorageService.getCustomerBalance(selectedCust.id)
+    : 0;
   const enteredAmount = Math.max(0, parseNum(amount));
   const enteredDiscount = Math.max(0, parseNum(discount));
   const remainingDuePreview = currentDue - enteredAmount - enteredDiscount;
@@ -107,6 +150,38 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     [filteredPayments]
   );
 
+  const handleAddMethod = () => {
+    const trimmed = newMethodName.trim();
+    if (!trimmed) {
+      setStatusMsg({ text: 'নতুন পেমেন্ট মেথডের নাম লিখুন (যেমন: Nagad, Rocket, Cheque)।', type: 'error' });
+      return;
+    }
+    const { updated, added, matchedName } = StorageService.addPaymentMethod(trimmed);
+    setLocalMethods(updated);
+    onPaymentMethodsChanged?.(updated);
+    setMethod(matchedName || trimmed);
+    setNewMethodName('');
+    if (added) {
+      FirestoreSyncService.syncMetadataLists(undefined, undefined, undefined, updated).catch(console.error);
+      setStatusMsg({ text: `নতুন পেমেন্ট মেথড "${matchedName}" যোগ করা হয়েছে।`, type: 'success' });
+    } else {
+      setStatusMsg({ text: `"${matchedName}" মেথডটি আগে থেকেই তালিকায় আছে ও নির্বাচিত করা হয়েছে।`, type: 'success' });
+    }
+    setTimeout(() => setStatusMsg(null), 3500);
+  };
+
+  const handleDeleteMethod = (m: string) => {
+    const updated = StorageService.deletePaymentMethod(m);
+    setLocalMethods(updated);
+    onPaymentMethodsChanged?.(updated);
+    if (method.toLowerCase() === m.toLowerCase()) {
+      setMethod('Cash');
+    }
+    FirestoreSyncService.syncMetadataLists(undefined, undefined, undefined, updated).catch(console.error);
+    setStatusMsg({ text: `পেমেন্ট মেথড "${m}" তালিকা থেকে সরানো হয়েছে।`, type: 'success' });
+    setTimeout(() => setStatusMsg(null), 3500);
+  };
+
   const handleSave = (print: boolean) => {
     if (!selectedCust) {
       setStatusMsg({ text: 'গ্রাহক বাছাই করুন।', type: 'error' });
@@ -126,7 +201,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
       custName: selectedCust.name,
       amount: amtVal,
       discount: discVal > 0 ? discVal : 0,
-      method,
+      method: method || 'Cash',
       remark: remark.trim(),
     };
 
@@ -163,11 +238,14 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                 className="flex-1 bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900 font-medium"
               >
                 <option value="">-- গ্রাহক বাছুন --</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.phone || c.address})
-                  </option>
-                ))}
+                {customers.map((c) => {
+                  const dueBal = customerDueMap.get(c.id) ?? 0;
+                  return (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.phone || c.address}) — বাকি: ৳ {formatMoney(dueBal)}
+                    </option>
+                  );
+                })}
               </select>
               <button
                 type="button"
@@ -183,8 +261,19 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
           {/* Current balance display */}
           <div className="space-y-1">
             <label className="block text-slate-700 font-semibold">বর্তমান বাকি (Current Due) :</label>
-            <div className="bg-rose-50 border border-rose-300 rounded px-3 py-1.5 font-mono font-bold text-rose-800 text-sm">
-              {selectedCust ? `৳ ${formatMoney(currentDue)}` : '—'}
+            <div
+              className={`border rounded px-3 py-1.5 font-mono font-bold text-sm flex items-center justify-between ${
+                selectedCust && currentDue <= 0
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  : 'bg-rose-50 border-rose-300 text-rose-800'
+              }`}
+            >
+              <span>{selectedCust ? `৳ ${formatMoney(currentDue)}` : '—'}</span>
+              {selectedCust && (
+                <span className="text-[10px] font-sans font-semibold opacity-80">
+                  {currentDue > 0 ? 'বকেয়া আছে' : currentDue < 0 ? 'অগ্রিম জমা' : 'পরিশোধিত'}
+                </span>
+              )}
             </div>
           </div>
 
@@ -228,23 +317,114 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="block text-slate-700 font-semibold">মাধ্যম (Method) :</label>
+              <div className="flex items-center justify-between gap-1">
+                <label className="block text-slate-700 font-semibold">মাধ্যম (Method) :</label>
+                <button
+                  type="button"
+                  onClick={() => setShowMethodManager((v) => !v)}
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                  title="নতুন পেমেন্ট মেথড যোগ বা ম্যানেজ করুন"
+                >
+                  <Plus className="w-3 h-3" />
+                  নতুন মেথড
+                </button>
+              </div>
               <select
                 value={method}
-                onChange={(e) => setMethod(e.target.value as any)}
+                onChange={(e) => setMethod(e.target.value)}
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 font-semibold text-slate-800"
               >
-                <option value="Cash">Cash (নগদ)</option>
-                <option value="Bank">Bank (ব্যাংক)</option>
-                <option value="Bkash">bKash (বিকাশ)</option>
+                {availableMethods.map((m) => (
+                  <option key={m} value={m}>
+                    {getMethodDisplayLabel(m)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
 
-          {selectedCust && (enteredAmount > 0 || enteredDiscount > 0) && (
+          {/* Inline Custom Payment Method Manager */}
+          {showMethodManager && (
+            <div className="sm:col-span-2 bg-emerald-50/70 border border-emerald-200 rounded-md p-3 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-emerald-900 text-xs">
+                  পেমেন্ট মেথড যোগ ও ব্যবস্থাপনা (Custom Payment Methods)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowMethodManager(false)}
+                  className="text-slate-500 hover:text-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  value={newMethodName}
+                  onChange={(e) => setNewMethodName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddMethod();
+                    }
+                  }}
+                  placeholder="নতুন মেথডের নাম লিখুন (যেমন: Nagad, Rocket, Cheque, Card...)"
+                  className="flex-1 min-w-[200px] bg-white border border-emerald-300 rounded px-2.5 py-1.5 text-slate-900 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddMethod}
+                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-bold cursor-pointer transition inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  যোগ করুন
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-slate-600 font-semibold mr-1">সক্রিয় মেথড:</span>
+                {availableMethods.map((m) => {
+                  const isCore = defaultPaymentMethods.some((cm) => cm.toLowerCase() === m.toLowerCase());
+                  const isSelectedMethod = method.toLowerCase() === m.toLowerCase();
+                  return (
+                    <span
+                      key={m}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-semibold ${
+                        isSelectedMethod
+                          ? 'bg-emerald-700 text-white border-emerald-700'
+                          : 'bg-white text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setMethod(m)}
+                        className="cursor-pointer"
+                      >
+                        {getMethodDisplayLabel(m)}
+                      </button>
+                      {!isCore && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMethod(m)}
+                          title={`"${m}" মুছুন`}
+                          className={`ml-0.5 cursor-pointer ${
+                            isSelectedMethod ? 'text-emerald-100 hover:text-white' : 'text-rose-500 hover:text-rose-700'
+                          }`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {selectedCust && (
             <div className="sm:col-span-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-              <span className="text-slate-600">
-                বর্তমান বাকি: <strong className="text-slate-900">৳ {formatMoney(currentDue)}</strong>
+              <span className="text-slate-700">
+                বর্তমান বাকি: <strong className="text-rose-800">৳ {formatMoney(currentDue)}</strong>
               </span>
               <span className="text-emerald-700">
                 (-) জমা: <strong>৳ {formatMoney(enteredAmount)}</strong>
@@ -400,7 +580,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
         </div>
 
         <div className="overflow-x-auto max-h-[380px]">
-          <table className="w-full min-w-[600px] text-xs text-left border-collapse">
+          <table className="w-full min-w-[700px] text-xs text-left border-collapse">
             <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
               <tr>
                 <th className="p-2 text-center w-16">Receipt</th>
@@ -408,7 +588,8 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                 <th className="p-2">গ্রাহকের নাম</th>
                 <th className="p-2 text-right w-28">জমা (৳)</th>
                 <th className="p-2 text-right w-24">ডিসকাউন্ট (৳)</th>
-                <th className="p-2 text-center w-20">মাধ্যম</th>
+                <th className="p-2 text-right w-28">বাকি (Due ৳)</th>
+                <th className="p-2 text-center w-24">মাধ্যম</th>
                 <th className="p-2">মন্তব্য</th>
                 <th className="p-2 text-center w-24">অ্যাকশন</th>
               </tr>
@@ -416,6 +597,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredPayments.map((p) => {
                 const isSelected = selectedPay?.id === p.id;
+                const custDue = customerDueMap.get(p.custId) ?? StorageService.getCustomerBalance(p.custId);
                 return (
                   <tr
                     key={p.id}
@@ -433,9 +615,12 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                     <td className="p-2 text-right font-mono font-bold text-amber-700">
                       {(p.discount || 0) > 0 ? `৳ ${formatMoney(p.discount || 0)}` : '—'}
                     </td>
+                    <td className={`p-2 text-right font-mono font-bold ${custDue > 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                      ৳ {formatMoney(custDue)}
+                    </td>
                     <td className="p-2 text-center">
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                        {p.method}
+                        {p.method || 'Cash'}
                       </span>
                     </td>
                     <td className="p-2 text-slate-600">{p.remark || '—'}</td>
@@ -477,7 +662,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
               })}
               {filteredPayments.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-slate-400">
+                  <td colSpan={9} className="p-6 text-center text-slate-400">
                     {payments.length === 0
                       ? 'কোনো জমা এন্ট্রি নেই'
                       : 'নির্বাচিত তারিখে কোনো পেমেন্ট রশিদ পাওয়া যায়নি — পুরাতন রশিদ দেখতে From/To তারিখ পরিবর্তন করুন'}
@@ -491,3 +676,4 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     </div>
   );
 };
+

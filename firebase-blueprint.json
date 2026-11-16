@@ -186,6 +186,7 @@
       "properties": {
         "categories": { "type": "array", "description": "List of categories" },
         "vendors": { "type": "array", "description": "List of vendors" },
+        "paymentMethods": { "type": "array", "description": "List of available payment methods" },
         "staffPerms": { "type": "object", "description": "Staff permission flags" },
         "enabled": { "type": "boolean", "description": "Notice ticker enabled state" },
         "message": { "type": "string", "description": "Notice ticker broadcast text" },

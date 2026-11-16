@@ -34,9 +34,12 @@ const STORAGE_KEYS = {
   STAFF_PERMS: 'tiles_billing_staff_perms_v2',
   CATEGORIES: 'tiles_billing_categories_v2',
   VENDORS: 'tiles_billing_vendors_v2',
+  PAYMENT_METHODS: 'tiles_billing_payment_methods_v2',
   NOTICE: 'tiles_billing_notice_v2',
   CONTACTS: 'tiles_billing_contacts_v2',
 };
+
+export const defaultPaymentMethods: string[] = ['Cash', 'Bank', 'Bkash'];
 
 export const defaultContactsInfo: ContactsInfo = {
   companyName: 'Os Technology',
@@ -819,6 +822,63 @@ export class StorageService {
     return updated;
   }
 
+  // Payment Methods Master Management
+  private static normalizePaymentMethods(methods: string[]): string[] {
+    const result: string[] = [...defaultPaymentMethods];
+    const seen = new Set(result.map((m) => m.toLowerCase()));
+    for (const raw of methods) {
+      const trimmed = String(raw || '').trim();
+      if (!trimmed) continue;
+      if (!seen.has(trimmed.toLowerCase())) {
+        seen.add(trimmed.toLowerCase());
+        result.push(trimmed);
+      }
+    }
+    return result;
+  }
+
+  static getPaymentMethods(): string[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.PAYMENT_METHODS);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          return this.normalizePaymentMethods(parsed);
+        }
+      }
+      return [...defaultPaymentMethods];
+    } catch {
+      return [...defaultPaymentMethods];
+    }
+  }
+
+  static savePaymentMethods(methods: string[]) {
+    const normalized = this.normalizePaymentMethods(methods);
+    localStorage.setItem(STORAGE_KEYS.PAYMENT_METHODS, JSON.stringify(normalized));
+  }
+
+  static addPaymentMethod(methodName: string): { updated: string[]; added: boolean; matchedName: string } {
+    const trimmed = methodName.trim();
+    const current = this.getPaymentMethods();
+    if (!trimmed) return { updated: current, added: false, matchedName: '' };
+    const existing = current.find((m) => m.toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      return { updated: current, added: false, matchedName: existing };
+    }
+    const updated = [...current, trimmed];
+    this.savePaymentMethods(updated);
+    return { updated, added: true, matchedName: trimmed };
+  }
+
+  static deletePaymentMethod(methodName: string): string[] {
+    const trimmed = methodName.trim();
+    const isCore = defaultPaymentMethods.some((m) => m.toLowerCase() === trimmed.toLowerCase());
+    if (isCore) return this.getPaymentMethods();
+    const updated = this.getPaymentMethods().filter((m) => m.toLowerCase() !== trimmed.toLowerCase());
+    this.savePaymentMethods(updated);
+    return updated;
+  }
+
   // Stock In records
   static getStockInRecords(): StockInRecord[] {
     try {
@@ -1283,6 +1343,7 @@ export class StorageService {
       deliveryChallans: this.getDeliveryChallans(),
       categories: this.getCategories(),
       vendors: this.getVendors(),
+      paymentMethods: this.getPaymentMethods(),
       staffPermissions: this.getStaffPermissions(),
       notice: this.getNotice(),
       contactsInfo: this.getContactsInfo(),
@@ -1307,6 +1368,7 @@ export class StorageService {
       if (Array.isArray(data.deliveryChallans)) this.saveDeliveryChallans(data.deliveryChallans);
       if (Array.isArray(data.categories)) this.saveCategories(data.categories);
       if (Array.isArray(data.vendors)) this.saveVendors(data.vendors);
+      if (Array.isArray(data.paymentMethods)) this.savePaymentMethods(data.paymentMethods);
       if (data.staffPermissions) this.saveStaffPermissions(data.staffPermissions);
       if (data.notice) this.saveNotice(data.notice);
       if (data.contactsInfo) this.saveContactsInfo(data.contactsInfo);
