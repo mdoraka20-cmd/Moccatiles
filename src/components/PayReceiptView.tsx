@@ -1,16 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Customer, Payment } from '../types';
 import { StorageService } from '../services/storage';
-import { formatMoney, parseNum } from '../utils/numberWords';
+import { formatMoney, parseNum, getTodayLocalDateStr, getNowLocalTimeStr } from '../utils/numberWords';
 import { Receipt, Search, Printer, Trash2, Check, RotateCcw, X } from 'lucide-react';
-
-const getTodayLocalDateStr = (): string => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
 
 interface PayReceiptViewProps {
   customers: Customer[];
@@ -58,6 +50,23 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     }
   }, [selectedCustomerFromPicker]);
 
+  // Keep selectedCust and selectedPay synchronized with live updates/deletes
+  React.useEffect(() => {
+    if (selectedCust) {
+      const live = customers.find((c) => c.id === selectedCust.id) || null;
+      if (!live) setSelectedCust(null);
+      else if (live !== selectedCust) setSelectedCust(live);
+    }
+  }, [customers, selectedCust]);
+
+  React.useEffect(() => {
+    if (selectedPay) {
+      const live = payments.find((p) => p.id === selectedPay.id) || null;
+      if (!live) setSelectedPay(null);
+      else if (live !== selectedPay) setSelectedPay(live);
+    }
+  }, [payments, selectedPay]);
+
   const currentDue = selectedCust ? StorageService.getCustomerBalance(selectedCust.id) : 0;
 
   const filteredPayments = useMemo(() => {
@@ -102,7 +111,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
 
     const newPayment: Payment = {
       id: StorageService.nextPayId(),
-      date: `${payDate} ${new Date().toLocaleTimeString('en-GB')}`,
+      date: `${payDate} ${getNowLocalTimeStr()}`,
       custId: selectedCust.id,
       custName: selectedCust.name,
       amount: amtVal,

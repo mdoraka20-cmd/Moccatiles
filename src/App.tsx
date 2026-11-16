@@ -68,6 +68,7 @@ export default function App() {
   const handleLoginSuccess = (user: AppUser) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
+    refreshAllData();
     setActiveTab('dashboard');
   };
 
@@ -203,23 +204,25 @@ export default function App() {
 
   // Handlers for Order / Invoices
   const handleSaveInvoice = (inv: Invoice, printKind: 'none' | 'invoice' | 'challan') => {
-    const existingIdx = invoices.findIndex((i) => i.no === inv.no);
+    const currentInvoices = StorageService.getInvoices();
+    const existingIdx = currentInvoices.findIndex((i) => i.no === inv.no);
     let updated: Invoice[];
     if (existingIdx >= 0) {
-      updated = [...invoices];
+      updated = [...currentInvoices];
       updated[existingIdx] = inv;
     } else {
-      updated = [inv, ...invoices];
+      updated = [inv, ...currentInvoices];
     }
     setInvoices(updated);
     StorageService.saveInvoices(updated);
     FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
 
     // Refresh customers in state in case new customer was added and sync to Firestore
+    const prevCustomers = customers;
     const latestCustomers = StorageService.getCustomers();
     setCustomers(latestCustomers);
     const createdCust = latestCustomers.find((c) => c.id === inv.custId);
-    if (createdCust && !customers.some((c) => c.id === createdCust.id)) {
+    if (createdCust && !prevCustomers.some((c) => c.id === createdCust.id)) {
       FirestoreSyncService.syncSaveCustomer(createdCust).catch(console.error);
     }
 
@@ -251,9 +254,11 @@ export default function App() {
     refreshAllData();
   };
 
-  const handleUpdateInvoiceDeal = (invoiceNo: number, newDeal: string) => {
-    setInvoices(StorageService.getInvoices());
-    const inv = StorageService.getInvoices().find((i) => i.no === invoiceNo);
+  const handleUpdateInvoiceDeal = (invoiceNo: number, _newDeal: string) => {
+    const latestInvs = StorageService.getInvoices();
+    setInvoices(latestInvs);
+    setDealers(StorageService.getDealers());
+    const inv = latestInvs.find((i) => i.no === invoiceNo);
     if (inv) {
       FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
     }
@@ -261,13 +266,14 @@ export default function App() {
 
   // Handlers for Customer
   const handleSaveCustomer = (cust: Customer) => {
-    const existingIdx = customers.findIndex((c) => c.id === cust.id);
+    const currentCustomers = StorageService.getCustomers();
+    const existingIdx = currentCustomers.findIndex((c) => c.id === cust.id);
     let updated: Customer[];
     if (existingIdx >= 0) {
-      updated = [...customers];
+      updated = [...currentCustomers];
       updated[existingIdx] = cust;
     } else {
-      updated = [...customers, cust];
+      updated = [...currentCustomers, cust];
     }
     setCustomers(updated);
     StorageService.saveCustomers(updated);
@@ -275,7 +281,7 @@ export default function App() {
   };
 
   const handleDeleteCustomer = (id: number) => {
-    const updated = customers.filter((c) => c.id !== id);
+    const updated = StorageService.getCustomers().filter((c) => c.id !== id);
     setCustomers(updated);
     StorageService.saveCustomers(updated);
     FirestoreSyncService.syncDeleteCustomer(id).catch(console.error);
@@ -283,13 +289,14 @@ export default function App() {
 
   // Handlers for Products
   const handleSaveProduct = (prod: Product) => {
-    const existingIdx = products.findIndex((p) => p.id === prod.id);
+    const currentProducts = StorageService.getProducts();
+    const existingIdx = currentProducts.findIndex((p) => p.id === prod.id);
     let updated: Product[];
     if (existingIdx >= 0) {
-      updated = [...products];
+      updated = [...currentProducts];
       updated[existingIdx] = prod;
     } else {
-      updated = [...products, prod];
+      updated = [...currentProducts, prod];
     }
     setProducts(updated);
     StorageService.saveProducts(updated);
@@ -297,7 +304,7 @@ export default function App() {
   };
 
   const handleDeleteProduct = (id: number) => {
-    const updated = products.filter((p) => p.id !== id);
+    const updated = StorageService.getProducts().filter((p) => p.id !== id);
     setProducts(updated);
     StorageService.saveProducts(updated);
     FirestoreSyncService.syncDeleteProduct(id).catch(console.error);
@@ -305,7 +312,15 @@ export default function App() {
 
   // Handlers for Payments
   const handleSavePayment = (payment: Payment, print: boolean) => {
-    const updated = [payment, ...payments];
+    const currentPayments = StorageService.getPayments();
+    const existingIdx = currentPayments.findIndex((p) => p.id === payment.id);
+    let updated: Payment[];
+    if (existingIdx >= 0) {
+      updated = [...currentPayments];
+      updated[existingIdx] = payment;
+    } else {
+      updated = [payment, ...currentPayments];
+    }
     setPayments(updated);
     StorageService.savePayments(updated);
     FirestoreSyncService.syncSavePayment(payment).catch(console.error);
@@ -320,7 +335,7 @@ export default function App() {
   };
 
   const handleDeletePayment = (id: number) => {
-    const updated = payments.filter((p) => p.id !== id);
+    const updated = StorageService.getPayments().filter((p) => p.id !== id);
     setPayments(updated);
     StorageService.savePayments(updated);
     FirestoreSyncService.syncDeletePayment(id).catch(console.error);
@@ -328,14 +343,22 @@ export default function App() {
 
   // Handlers for Txns
   const handleSaveTxn = (t: Txn) => {
-    const updated = [t, ...txns];
+    const currentTxns = StorageService.getTxns();
+    const existingIdx = currentTxns.findIndex((x) => x.id === t.id);
+    let updated: Txn[];
+    if (existingIdx >= 0) {
+      updated = [...currentTxns];
+      updated[existingIdx] = t;
+    } else {
+      updated = [t, ...currentTxns];
+    }
     setTxns(updated);
     StorageService.saveTxns(updated);
     FirestoreSyncService.syncSaveTxn(t).catch(console.error);
   };
 
   const handleDeleteTxn = (id: number) => {
-    const updated = txns.filter((t) => t.id !== id);
+    const updated = StorageService.getTxns().filter((t) => t.id !== id);
     setTxns(updated);
     StorageService.saveTxns(updated);
     FirestoreSyncService.syncDeleteTxn(id).catch(console.error);
@@ -419,6 +442,7 @@ export default function App() {
             products={products}
             customers={customers}
             invoices={invoices}
+            dealers={dealers}
             shop={shop}
             currentUser={currentUser}
             permissions={staffPermissions}
@@ -548,6 +572,7 @@ export default function App() {
             products={products}
             payments={payments}
             txns={txns}
+            staffPermissions={staffPermissions}
             notice={notice}
             onUpdateNotice={(updatedNotice) => {
               setNotice(updatedNotice);
@@ -617,6 +642,23 @@ export default function App() {
           users={users}
           onLoginSuccess={(u) => {
             setCurrentUser(u);
+            refreshAllData();
+            const latestPerms = StorageService.getStaffPermissions();
+            if (u.role !== 'admin') {
+              if (
+                activeTab === 'admin_control' ||
+                (activeTab === 'stock_inventory' && latestPerms.canAccessStock === false) ||
+                (activeTab === 'customer' && latestPerms.canManageCustomers === false) ||
+                (activeTab === 'products' && latestPerms.canManageProducts === false) ||
+                (activeTab === 'payment' && latestPerms.canRecordPayment === false) ||
+                (activeTab === 'income_expend' && latestPerms.canManageExpenses === false) ||
+                (activeTab === 'sales_report' && latestPerms.canViewReports === false) ||
+                (activeTab === 'settings' && latestPerms.canAccessSettings === false) ||
+                (activeTab === 'data_backup' && latestPerms.canBackupData === false)
+              ) {
+                setActiveTab('dashboard');
+              }
+            }
           }}
         />
       )}

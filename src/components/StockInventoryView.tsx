@@ -13,7 +13,7 @@ import {
 } from '../types';
 import { StorageService } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
-import { formatMoney, formatQty, parseNum, formatDateBangla, formatDateTimeBangla } from '../utils/numberWords';
+import { formatMoney, formatQty, parseNum, formatDateBangla, formatDateTimeBangla, getTodayLocalDateStr, getNowLocalTimeStr, getNowLocalDateTimeStr } from '../utils/numberWords';
 import {
   Package,
   Truck,
@@ -74,7 +74,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   const [vendorName, setVendorName] = useState('');
   const [vendorChallanNo, setVendorChallanNo] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
-  const [stockInDate, setStockInDate] = useState(new Date().toISOString().slice(0, 10));
+  const [stockInDate, setStockInDate] = useState(getTodayLocalDateStr());
   const [stockInNote, setStockInNote] = useState('');
   const [stockInItems, setStockInItems] = useState<StockInItem[]>([]);
 
@@ -108,6 +108,17 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [deleteChallanTarget, setDeleteChallanTarget] = useState<Invoice | null>(null);
   const [deleteDeliveryHistoryTarget, setDeleteDeliveryHistoryTarget] = useState<DeliveryChallan | null>(null);
+  const [storageTick, setStorageTick] = useState(0);
+
+  React.useEffect(() => {
+    const onUpdate = () => setStorageTick((t) => t + 1);
+    window.addEventListener('app-storage-updated', onUpdate);
+    window.addEventListener('storage', onUpdate);
+    return () => {
+      window.removeEventListener('app-storage-updated', onUpdate);
+      window.removeEventListener('storage', onUpdate);
+    };
+  }, []);
 
   const canDispatch = currentUser?.role === 'admin' || (permissions ? permissions.canDispatchDelivery : true);
   const canStockIn = currentUser?.role === 'admin' || (permissions ? permissions.canStockIn : true);
@@ -249,7 +260,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       vendorName: vendorName.trim(),
       vendorChallanNo: vendorChallanNo.trim() || '—',
       referenceNo: referenceNo.trim() || '—',
-      date: `${stockInDate} ${new Date().toLocaleTimeString('en-GB')}`,
+      date: `${stockInDate} ${getNowLocalTimeStr()}`,
       note: stockInNote.trim(),
       items: stockInItems,
       totalAmount: totalAmt,
@@ -339,7 +350,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       address: inv.address,
       phone: inv.phone,
       deal: inv.deal,
-      date: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      date: getNowLocalDateTimeStr(),
       vehicleNo: 'ফুল ডেলিভারি',
       note: '১-ক্লিকে সম্পূর্ণ চালান ডেলিভারি সম্পন্ন',
       dispatchedBy: StorageService.getCurrentUser().name,
@@ -414,7 +425,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       address: deliveryModalInvoice.address,
       phone: deliveryModalInvoice.phone,
       deal: deliveryModalInvoice.deal,
-      date: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      date: getNowLocalDateTimeStr(),
       vehicleNo: vehicleNo.trim() || '—',
       driverName: driverName.trim() || '—',
       driverPhone: driverPhone.trim() || '—',
@@ -436,8 +447,14 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     });
   };
 
-  const deliveryChallansHistory = StorageService.getDeliveryChallans();
-  const stockInHistory = StorageService.getStockInRecords();
+  const deliveryChallansHistory = React.useMemo(
+    () => StorageService.getDeliveryChallans(),
+    [invoices, products, storageTick]
+  );
+  const stockInHistory = React.useMemo(
+    () => StorageService.getStockInRecords(),
+    [products, storageTick]
+  );
 
   // Pending challans: all invoices with delivery status
   const pendingInvoices = invoices.filter((inv) => {

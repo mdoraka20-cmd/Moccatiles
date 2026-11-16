@@ -25,9 +25,28 @@ import {
 } from '../types';
 import { StorageService, defaultStaffPermissions } from './storage';
 
+// Recursively strip undefined properties so Firestore setDoc/batch.set never throws
+function sanitizeForFirestore<T>(val: T): T {
+  if (val === null || val === undefined) return val;
+  if (Array.isArray(val)) {
+    return val
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof val === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val as Record<string, any>)) {
+      if (v !== undefined) {
+        out[k] = sanitizeForFirestore(v);
+      }
+    }
+    return out as T;
+  }
+  return val;
+}
+
 export class FirestoreSyncService {
   private static isInitialized = false;
-  private static bootstrapDone = false;
 
   // Initialize Real-time synchronization
   static initRealtimeSync(callbacks: {
@@ -49,215 +68,213 @@ export class FirestoreSyncService {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    // First, bootstrap initial data to Firestore if Firestore is fresh
-    this.bootstrapDataIfEmpty()
-      .catch((err) => {
-        console.warn('Initial Firestore bootstrap notice:', err);
-      })
-      .finally(() => {
-        this.bootstrapDone = true;
-      });
+    const attachListeners = () => {
+      // 1. Shop Config Listener
+      const shopPath = 'shop';
+      onSnapshot(
+        doc(db, shopPath, 'config'),
+        (snap) => {
+          if (snap.exists()) {
+            const shopData = snap.data() as ShopConfig;
+            StorageService.saveShop(shopData);
+            if (callbacks.onShopUpdate) callbacks.onShopUpdate(shopData);
+            StorageService.notifyUpdate();
+          }
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `${shopPath}/config`)
+      );
 
-    // 1. Shop Config Listener
-    const shopPath = 'shop';
-    onSnapshot(
-      doc(db, shopPath, 'config'),
-      (snap) => {
-        if (snap.exists()) {
-          const shopData = snap.data() as ShopConfig;
-          StorageService.saveShop(shopData);
-          if (callbacks.onShopUpdate) callbacks.onShopUpdate(shopData);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, `${shopPath}/config`)
-    );
-
-    // 2. Products Listener
-    const prodPath = 'products';
-    onSnapshot(
-      collection(db, prodPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 2. Products Listener
+      const prodPath = 'products';
+      onSnapshot(
+        collection(db, prodPath),
+        (snap) => {
           const prods: Product[] = [];
           snap.forEach((d) => prods.push(d.data() as Product));
           prods.sort((a, b) => a.id - b.id);
           StorageService.saveProducts(prods);
           if (callbacks.onProductsUpdate) callbacks.onProductsUpdate(prods);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, prodPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, prodPath)
+      );
 
-    // 3. Customers Listener
-    const custPath = 'customers';
-    onSnapshot(
-      collection(db, custPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 3. Customers Listener
+      const custPath = 'customers';
+      onSnapshot(
+        collection(db, custPath),
+        (snap) => {
           const custs: Customer[] = [];
           snap.forEach((d) => custs.push(d.data() as Customer));
           custs.sort((a, b) => a.id - b.id);
           StorageService.saveCustomers(custs);
           if (callbacks.onCustomersUpdate) callbacks.onCustomersUpdate(custs);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, custPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, custPath)
+      );
 
-    // 4. Invoices Listener
-    const invPath = 'invoices';
-    onSnapshot(
-      collection(db, invPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 4. Invoices Listener
+      const invPath = 'invoices';
+      onSnapshot(
+        collection(db, invPath),
+        (snap) => {
           const invs: Invoice[] = [];
           snap.forEach((d) => invs.push(d.data() as Invoice));
           invs.sort((a, b) => b.no - a.no);
           StorageService.saveInvoices(invs);
           if (callbacks.onInvoicesUpdate) callbacks.onInvoicesUpdate(invs);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, invPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, invPath)
+      );
 
-    // 5. Payments Listener
-    const payPath = 'payments';
-    onSnapshot(
-      collection(db, payPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 5. Payments Listener
+      const payPath = 'payments';
+      onSnapshot(
+        collection(db, payPath),
+        (snap) => {
           const pays: Payment[] = [];
           snap.forEach((d) => pays.push(d.data() as Payment));
           pays.sort((a, b) => b.id - a.id);
           StorageService.savePayments(pays);
           if (callbacks.onPaymentsUpdate) callbacks.onPaymentsUpdate(pays);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, payPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, payPath)
+      );
 
-    // 6. Transactions (Income/Expenses) Listener
-    const txnPath = 'txns';
-    onSnapshot(
-      collection(db, txnPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 6. Transactions (Income/Expenses) Listener
+      const txnPath = 'txns';
+      onSnapshot(
+        collection(db, txnPath),
+        (snap) => {
           const txnsList: Txn[] = [];
           snap.forEach((d) => txnsList.push(d.data() as Txn));
           txnsList.sort((a, b) => b.id - a.id);
           StorageService.saveTxns(txnsList);
           if (callbacks.onTxnsUpdate) callbacks.onTxnsUpdate(txnsList);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, txnPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, txnPath)
+      );
 
-    // 7. Dealers Listener
-    const dealPath = 'dealers';
-    onSnapshot(
-      collection(db, dealPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 7. Dealers Listener
+      const dealPath = 'dealers';
+      onSnapshot(
+        collection(db, dealPath),
+        (snap) => {
           const dealersList: DealerDeal[] = [];
           snap.forEach((d) => dealersList.push(d.data() as DealerDeal));
           dealersList.sort((a, b) => a.id - b.id);
           StorageService.saveDealers(dealersList);
           if (callbacks.onDealersUpdate) callbacks.onDealersUpdate(dealersList);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, dealPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, dealPath)
+      );
 
-    // 8. Users Listener (always syncs latest login data across all devices)
-    const userPath = 'users';
-    onSnapshot(
-      collection(db, userPath),
-      (snap) => {
-        if (!snap.empty) {
-          const usersList: AppUser[] = [];
-          snap.forEach((d) => usersList.push(d.data() as AppUser));
-          StorageService.saveUsers(usersList);
-          if (callbacks.onUsersUpdate) callbacks.onUsersUpdate(usersList);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, userPath)
-    );
+      // 8. Users Listener (always syncs latest login data across all devices)
+      const userPath = 'users';
+      onSnapshot(
+        collection(db, userPath),
+        (snap) => {
+          if (!snap.empty) {
+            const usersList: AppUser[] = [];
+            snap.forEach((d) => usersList.push(d.data() as AppUser));
+            StorageService.saveUsers(usersList);
+            if (callbacks.onUsersUpdate) callbacks.onUsersUpdate(usersList);
+            StorageService.notifyUpdate();
+          }
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, userPath)
+      );
 
-    // 9. Stock In Records Listener
-    const stockInPath = 'stockInRecords';
-    onSnapshot(
-      collection(db, stockInPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 9. Stock In Records Listener
+      const stockInPath = 'stockInRecords';
+      onSnapshot(
+        collection(db, stockInPath),
+        (snap) => {
           const records: StockInRecord[] = [];
           snap.forEach((d) => records.push(d.data() as StockInRecord));
           records.sort((a, b) => b.id - a.id);
           StorageService.saveStockInRecords(records);
           if (callbacks.onStockInUpdate) callbacks.onStockInUpdate(records);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, stockInPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, stockInPath)
+      );
 
-    // 10. Delivery Challans Listener
-    const delivPath = 'deliveryChallans';
-    onSnapshot(
-      collection(db, delivPath),
-      (snap) => {
-        if (!snap.empty || this.bootstrapDone) {
+      // 10. Delivery Challans Listener
+      const delivPath = 'deliveryChallans';
+      onSnapshot(
+        collection(db, delivPath),
+        (snap) => {
           const challans: DeliveryChallan[] = [];
           snap.forEach((d) => challans.push(d.data() as DeliveryChallan));
           challans.sort((a, b) => b.id - a.id);
           StorageService.saveDeliveryChallans(challans);
           if (callbacks.onDeliveriesUpdate) callbacks.onDeliveriesUpdate(challans);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.LIST, delivPath)
-    );
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, delivPath)
+      );
 
-    // 11. Metadata (Categories, Vendors, Staff Permissions)
-    const metaPath = 'metadata';
-    onSnapshot(
-      doc(db, metaPath, 'lists'),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (Array.isArray(data.categories)) {
-            StorageService.saveCategories(data.categories);
-            if (callbacks.onCategoriesUpdate) callbacks.onCategoriesUpdate(data.categories);
+      // 11. Metadata (Categories, Vendors, Staff Permissions)
+      const metaPath = 'metadata';
+      onSnapshot(
+        doc(db, metaPath, 'lists'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data();
+            if (Array.isArray(data.categories)) {
+              StorageService.saveCategories(data.categories);
+              if (callbacks.onCategoriesUpdate) callbacks.onCategoriesUpdate(data.categories);
+            }
+            if (Array.isArray(data.vendors)) {
+              StorageService.saveVendors(data.vendors);
+              if (callbacks.onVendorsUpdate) callbacks.onVendorsUpdate(data.vendors);
+            }
+            if (data.staffPerms) {
+              const mergedPerms: StaffPermissions = { ...defaultStaffPermissions, ...data.staffPerms };
+              StorageService.saveStaffPermissions(mergedPerms);
+              if (callbacks.onStaffPermsUpdate) callbacks.onStaffPermsUpdate(mergedPerms);
+            }
+            StorageService.notifyUpdate();
           }
-          if (Array.isArray(data.vendors)) {
-            StorageService.saveVendors(data.vendors);
-            if (callbacks.onVendorsUpdate) callbacks.onVendorsUpdate(data.vendors);
-          }
-          if (data.staffPerms) {
-            const mergedPerms: StaffPermissions = { ...defaultStaffPermissions, ...data.staffPerms };
-            StorageService.saveStaffPermissions(mergedPerms);
-            if (callbacks.onStaffPermsUpdate) callbacks.onStaffPermsUpdate(mergedPerms);
-          }
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/lists`)
-    );
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/lists`)
+      );
 
-    // 12. Global Notice Banner Listener
-    onSnapshot(
-      doc(db, metaPath, 'notice'),
-      (snap) => {
-        if (snap.exists()) {
-          const data = snap.data() as NoticeBanner;
-          const normalized: NoticeBanner = {
-            enabled: Boolean(data.enabled),
-            message: String(data.message || ''),
-            updatedAt: data.updatedAt || '',
-            updatedBy: data.updatedBy || '',
-          };
-          StorageService.saveNotice(normalized);
-          if (callbacks.onNoticeUpdate) callbacks.onNoticeUpdate(normalized);
-        }
-      },
-      (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/notice`)
-    );
+      // 12. Global Notice Banner Listener
+      onSnapshot(
+        doc(db, metaPath, 'notice'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as NoticeBanner;
+            const normalized: NoticeBanner = {
+              enabled: Boolean(data.enabled),
+              message: String(data.message || ''),
+              updatedAt: data.updatedAt || '',
+              updatedBy: data.updatedBy || '',
+            };
+            StorageService.saveNotice(normalized);
+            if (callbacks.onNoticeUpdate) callbacks.onNoticeUpdate(normalized);
+            StorageService.notifyUpdate();
+          }
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/notice`)
+      );
+    };
+
+    // Bootstrap initial data to Firestore if fresh, THEN attach realtime listeners
+    this.bootstrapDataIfEmpty()
+      .catch((err) => {
+        console.warn('Initial Firestore bootstrap notice:', err);
+      })
+      .finally(() => {
+        attachListeners();
+      });
   }
 
   // Sync Shop Config
@@ -265,7 +282,7 @@ export class FirestoreSyncService {
     StorageService.saveShop(shop);
     const path = 'shop/config';
     try {
-      await setDoc(doc(db, 'shop', 'config'), shop);
+      await setDoc(doc(db, 'shop', 'config'), sanitizeForFirestore(shop));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -284,9 +301,34 @@ export class FirestoreSyncService {
 
     const path = `products/${prod.id}`;
     try {
-      await setDoc(doc(db, 'products', String(prod.id)), prod);
+      await setDoc(doc(db, 'products', String(prod.id)), sanitizeForFirestore(prod));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }
+
+  // Batch sync multiple products (e.g. after category/vendor rename)
+  static async syncSaveProducts(prods: Product[]) {
+    if (prods.length === 0) return;
+    const allProducts = StorageService.getProducts();
+    for (const prod of prods) {
+      const idx = allProducts.findIndex((p) => p.id === prod.id);
+      if (idx >= 0) allProducts[idx] = prod;
+      else allProducts.push(prod);
+    }
+    StorageService.saveProducts(allProducts);
+
+    try {
+      for (let i = 0; i < prods.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = prods.slice(i, i + 400);
+        chunk.forEach((p) => {
+          batch.set(doc(db, 'products', String(p.id)), sanitizeForFirestore(p));
+        });
+        await batch.commit();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'products');
     }
   }
 
@@ -316,7 +358,7 @@ export class FirestoreSyncService {
 
     const path = `customers/${cust.id}`;
     try {
-      await setDoc(doc(db, 'customers', String(cust.id)), cust);
+      await setDoc(doc(db, 'customers', String(cust.id)), sanitizeForFirestore(cust));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -348,9 +390,26 @@ export class FirestoreSyncService {
 
     const path = `invoices/${inv.no}`;
     try {
-      await setDoc(doc(db, 'invoices', String(inv.no)), inv);
+      await setDoc(doc(db, 'invoices', String(inv.no)), sanitizeForFirestore(inv));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }
+
+  // Batch sync multiple invoices (e.g. after deal batch rename)
+  static async syncSaveInvoices(invs: Invoice[]) {
+    if (invs.length === 0) return;
+    try {
+      for (let i = 0; i < invs.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = invs.slice(i, i + 400);
+        chunk.forEach((inv) => {
+          batch.set(doc(db, 'invoices', String(inv.no)), sanitizeForFirestore(inv));
+        });
+        await batch.commit();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'invoices');
     }
   }
 
@@ -371,6 +430,7 @@ export class FirestoreSyncService {
   static async syncDeleteDeliveryChallan(challanId: number) {
     const { deletedChallan, updatedInvoice, updatedProducts } = StorageService.deleteDeliveryChallan(challanId);
     if (!deletedChallan) return;
+    StorageService.notifyUpdate();
 
     const path = `deliveryChallans/${challanId}`;
     try {
@@ -382,7 +442,7 @@ export class FirestoreSyncService {
     if (updatedInvoice) {
       const invPath = `invoices/${updatedInvoice.no}`;
       try {
-        await setDoc(doc(db, 'invoices', String(updatedInvoice.no)), updatedInvoice);
+        await setDoc(doc(db, 'invoices', String(updatedInvoice.no)), sanitizeForFirestore(updatedInvoice));
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, invPath);
       }
@@ -391,7 +451,7 @@ export class FirestoreSyncService {
     for (const prod of updatedProducts) {
       const prodPath = `products/${prod.id}`;
       try {
-        await setDoc(doc(db, 'products', String(prod.id)), prod);
+        await setDoc(doc(db, 'products', String(prod.id)), sanitizeForFirestore(prod));
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, prodPath);
       }
@@ -406,6 +466,7 @@ export class FirestoreSyncService {
 
     const remaining = allChallans.filter((ch) => ch.invoiceNo !== invoiceNo);
     StorageService.saveDeliveryChallans(remaining);
+    StorageService.notifyUpdate();
 
     for (const ch of toDelete) {
       const path = `deliveryChallans/${ch.id}`;
@@ -417,14 +478,21 @@ export class FirestoreSyncService {
     }
   }
 
-  // Sync Payment
+  // Sync Payment (Upsert to avoid duplicate entries)
   static async syncSavePayment(payment: Payment) {
-    const payments = [payment, ...StorageService.getPayments()];
+    const payments = StorageService.getPayments();
+    const idx = payments.findIndex((p) => p.id === payment.id);
+    if (idx >= 0) {
+      payments[idx] = payment;
+    } else {
+      payments.unshift(payment);
+    }
+    payments.sort((a, b) => b.id - a.id);
     StorageService.savePayments(payments);
 
     const path = `payments/${payment.id}`;
     try {
-      await setDoc(doc(db, 'payments', String(payment.id)), payment);
+      await setDoc(doc(db, 'payments', String(payment.id)), sanitizeForFirestore(payment));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -443,14 +511,21 @@ export class FirestoreSyncService {
     }
   }
 
-  // Sync Transaction (Income / Expense)
+  // Sync Transaction (Income / Expense) (Upsert to avoid duplicate entries)
   static async syncSaveTxn(t: Txn) {
-    const txns = [t, ...StorageService.getTxns()];
+    const txns = StorageService.getTxns();
+    const idx = txns.findIndex((x) => x.id === t.id);
+    if (idx >= 0) {
+      txns[idx] = t;
+    } else {
+      txns.unshift(t);
+    }
+    txns.sort((a, b) => b.id - a.id);
     StorageService.saveTxns(txns);
 
     const path = `txns/${t.id}`;
     try {
-      await setDoc(doc(db, 'txns', String(t.id)), t);
+      await setDoc(doc(db, 'txns', String(t.id)), sanitizeForFirestore(t));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -472,9 +547,10 @@ export class FirestoreSyncService {
   // Sync Dealer
   static async syncSaveDealers(dealers: DealerDeal[]) {
     StorageService.saveDealers(dealers);
+    StorageService.notifyUpdate();
     for (const d of dealers) {
       try {
-        await setDoc(doc(db, 'dealers', String(d.id)), d);
+        await setDoc(doc(db, 'dealers', String(d.id)), sanitizeForFirestore(d));
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `dealers/${d.id}`);
       }
@@ -484,6 +560,7 @@ export class FirestoreSyncService {
   static async syncDeleteDealer(id: number) {
     const dealers = StorageService.getDealers().filter((d) => d.id !== id);
     StorageService.saveDealers(dealers);
+    StorageService.notifyUpdate();
 
     const path = `dealers/${id}`;
     try {
@@ -496,9 +573,10 @@ export class FirestoreSyncService {
   // Sync Users
   static async syncSaveUsers(users: AppUser[]) {
     StorageService.saveUsers(users);
+    StorageService.notifyUpdate();
     for (const u of users) {
       try {
-        await setDoc(doc(db, 'users', u.id), u);
+        await setDoc(doc(db, 'users', u.id), sanitizeForFirestore(u));
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `users/${u.id}`);
       }
@@ -508,6 +586,7 @@ export class FirestoreSyncService {
   static async syncDeleteUser(id: string) {
     const users = StorageService.getUsers().filter((u) => u.id !== id);
     StorageService.saveUsers(users);
+    StorageService.notifyUpdate();
 
     const path = `users/${id}`;
     try {
@@ -520,13 +599,17 @@ export class FirestoreSyncService {
   // Sync Stock In
   static async syncAddStockInRecord(record: StockInRecord) {
     StorageService.addStockInRecord(record);
+    StorageService.notifyUpdate();
     const path = `stockInRecords/${record.id}`;
     try {
-      await setDoc(doc(db, 'stockInRecords', String(record.id)), record);
-      // Also update products in Firestore
+      await setDoc(doc(db, 'stockInRecords', String(record.id)), sanitizeForFirestore(record));
+      // Also update affected products in Firestore
       const products = StorageService.getProducts();
-      for (const p of products) {
-        await setDoc(doc(db, 'products', String(p.id)), p);
+      for (const it of record.items) {
+        const prod = products.find((p) => p.id === it.productId);
+        if (prod) {
+          await setDoc(doc(db, 'products', String(prod.id)), sanitizeForFirestore(prod));
+        }
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
@@ -536,20 +619,21 @@ export class FirestoreSyncService {
   // Sync Delivery Challan
   static async syncAddDeliveryChallan(challan: DeliveryChallan) {
     StorageService.addDeliveryChallan(challan);
+    StorageService.notifyUpdate();
     const path = `deliveryChallans/${challan.id}`;
     try {
-      await setDoc(doc(db, 'deliveryChallans', String(challan.id)), challan);
+      await setDoc(doc(db, 'deliveryChallans', String(challan.id)), sanitizeForFirestore(challan));
       // Update invoice and product stocks in Firestore
       const invoices = StorageService.getInvoices();
       const inv = invoices.find((i) => i.no === challan.invoiceNo);
       if (inv) {
-        await setDoc(doc(db, 'invoices', String(inv.no)), inv);
+        await setDoc(doc(db, 'invoices', String(inv.no)), sanitizeForFirestore(inv));
       }
       const products = StorageService.getProducts();
       for (const it of challan.items) {
         const prod = products.find((p) => p.id === it.productId);
         if (prod) {
-          await setDoc(doc(db, 'products', String(prod.id)), prod);
+          await setDoc(doc(db, 'products', String(prod.id)), sanitizeForFirestore(prod));
         }
       }
     } catch (err) {
@@ -566,15 +650,19 @@ export class FirestoreSyncService {
     if (categories) StorageService.saveCategories(currentCats);
     if (vendors) StorageService.saveVendors(currentVendors);
     if (staffPerms) StorageService.saveStaffPermissions(currentPerms);
+    StorageService.notifyUpdate();
 
     const path = 'metadata/lists';
     try {
-      await setDoc(doc(db, 'metadata', 'lists'), {
-        categories: currentCats,
-        vendors: currentVendors,
-        staffPerms: currentPerms,
-        bootstrapped: true,
-      });
+      await setDoc(
+        doc(db, 'metadata', 'lists'),
+        sanitizeForFirestore({
+          categories: currentCats,
+          vendors: currentVendors,
+          staffPerms: currentPerms,
+          bootstrapped: true,
+        })
+      );
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -583,9 +671,10 @@ export class FirestoreSyncService {
   // Sync Global Notice Banner to Firestore (all users receive live updates)
   static async syncNotice(notice: NoticeBanner) {
     StorageService.saveNotice(notice);
+    StorageService.notifyUpdate();
     const path = 'metadata/notice';
     try {
-      await setDoc(doc(db, 'metadata', 'notice'), notice);
+      await setDoc(doc(db, 'metadata', 'notice'), sanitizeForFirestore(notice));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -607,6 +696,7 @@ export class FirestoreSyncService {
   // Selective or full data deletion across Local + Cloud Firestore
   static async syncClearCollections(targets: string[]) {
     StorageService.clearSelectiveData(targets);
+    StorageService.notifyUpdate();
     const wipeAll = targets.includes('all');
     const allTargets = [
       'invoices',
@@ -633,6 +723,7 @@ export class FirestoreSyncService {
   static async syncFullRestoreFromJSON(jsonStr: string): Promise<boolean> {
     const ok = StorageService.importFromJSON(jsonStr);
     if (!ok) return false;
+    StorageService.notifyUpdate();
 
     const data = JSON.parse(jsonStr);
     const writeChunked = async (colName: string, items: any[], getId: (item: any) => string) => {
@@ -641,14 +732,14 @@ export class FirestoreSyncService {
         const batch = writeBatch(db);
         const chunk = items.slice(i, i + 400);
         chunk.forEach((item) => {
-          batch.set(doc(db, colName, getId(item)), item);
+          batch.set(doc(db, colName, getId(item)), sanitizeForFirestore(item));
         });
         await batch.commit();
       }
     };
 
     try {
-      if (data.shop) await setDoc(doc(db, 'shop', 'config'), data.shop);
+      if (data.shop) await setDoc(doc(db, 'shop', 'config'), sanitizeForFirestore(data.shop));
       if (Array.isArray(data.products)) await writeChunked('products', data.products, (p) => String(p.id));
       if (Array.isArray(data.customers)) await writeChunked('customers', data.customers, (c) => String(c.id));
       if (Array.isArray(data.invoices)) await writeChunked('invoices', data.invoices, (inv) => String(inv.no));
@@ -659,14 +750,17 @@ export class FirestoreSyncService {
       if (Array.isArray(data.stockInRecords)) await writeChunked('stockInRecords', data.stockInRecords, (r) => String(r.id));
       if (Array.isArray(data.deliveryChallans)) await writeChunked('deliveryChallans', data.deliveryChallans, (ch) => String(ch.id));
 
-      await setDoc(doc(db, 'metadata', 'lists'), {
-        categories: StorageService.getCategories(),
-        vendors: StorageService.getVendors(),
-        staffPerms: StorageService.getStaffPermissions(),
-        bootstrapped: true,
-      });
+      await setDoc(
+        doc(db, 'metadata', 'lists'),
+        sanitizeForFirestore({
+          categories: StorageService.getCategories(),
+          vendors: StorageService.getVendors(),
+          staffPerms: StorageService.getStaffPermissions(),
+          bootstrapped: true,
+        })
+      );
       if (data.notice) {
-        await setDoc(doc(db, 'metadata', 'notice'), StorageService.getNotice());
+        await setDoc(doc(db, 'metadata', 'notice'), sanitizeForFirestore(StorageService.getNotice()));
       }
       return true;
     } catch (err) {
@@ -686,69 +780,72 @@ export class FirestoreSyncService {
 
         // Shop config
         const shop = StorageService.getShop();
-        batch.set(doc(db, 'shop', 'config'), shop);
+        batch.set(doc(db, 'shop', 'config'), sanitizeForFirestore(shop));
 
         // Products
         const products = StorageService.getProducts();
         for (const p of products) {
-          batch.set(doc(db, 'products', String(p.id)), p);
+          batch.set(doc(db, 'products', String(p.id)), sanitizeForFirestore(p));
         }
 
         // Customers
         const customers = StorageService.getCustomers();
         for (const c of customers) {
-          batch.set(doc(db, 'customers', String(c.id)), c);
+          batch.set(doc(db, 'customers', String(c.id)), sanitizeForFirestore(c));
         }
 
         // Invoices
         const invoices = StorageService.getInvoices();
         for (const inv of invoices) {
-          batch.set(doc(db, 'invoices', String(inv.no)), inv);
+          batch.set(doc(db, 'invoices', String(inv.no)), sanitizeForFirestore(inv));
         }
 
         // Payments
         const payments = StorageService.getPayments();
         for (const pay of payments) {
-          batch.set(doc(db, 'payments', String(pay.id)), pay);
+          batch.set(doc(db, 'payments', String(pay.id)), sanitizeForFirestore(pay));
         }
 
         // Txns
         const txns = StorageService.getTxns();
         for (const t of txns) {
-          batch.set(doc(db, 'txns', String(t.id)), t);
+          batch.set(doc(db, 'txns', String(t.id)), sanitizeForFirestore(t));
         }
 
         // Dealers
         const dealers = StorageService.getDealers();
         for (const d of dealers) {
-          batch.set(doc(db, 'dealers', String(d.id)), d);
+          batch.set(doc(db, 'dealers', String(d.id)), sanitizeForFirestore(d));
         }
 
         // Users
         const users = StorageService.getUsers();
         for (const u of users) {
-          batch.set(doc(db, 'users', u.id), u);
+          batch.set(doc(db, 'users', u.id), sanitizeForFirestore(u));
         }
 
         // Stock Ins
         const stockIns = StorageService.getStockInRecords();
         for (const s of stockIns) {
-          batch.set(doc(db, 'stockInRecords', String(s.id)), s);
+          batch.set(doc(db, 'stockInRecords', String(s.id)), sanitizeForFirestore(s));
         }
 
         // Deliveries
         const deliveries = StorageService.getDeliveryChallans();
         for (const ch of deliveries) {
-          batch.set(doc(db, 'deliveryChallans', String(ch.id)), ch);
+          batch.set(doc(db, 'deliveryChallans', String(ch.id)), sanitizeForFirestore(ch));
         }
 
         // Metadata
-        batch.set(doc(db, 'metadata', 'lists'), {
-          categories: StorageService.getCategories(),
-          vendors: StorageService.getVendors(),
-          staffPerms: StorageService.getStaffPermissions(),
-          bootstrapped: true,
-        });
+        batch.set(
+          doc(db, 'metadata', 'lists'),
+          sanitizeForFirestore({
+            categories: StorageService.getCategories(),
+            vendors: StorageService.getVendors(),
+            staffPerms: StorageService.getStaffPermissions(),
+            bootstrapped: true,
+          })
+        );
 
         await batch.commit();
         console.log('Bootstrap to Cloud Firestore completed successfully!');

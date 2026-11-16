@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
 import { StorageService, defaultStaffPermissions } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
+import { getTodayLocalDateStr, getNowLocalDateTimeStr } from '../utils/numberWords';
 import {
   ShieldCheck,
   Users,
@@ -37,6 +38,7 @@ interface AdminControlViewProps {
   products?: Product[];
   payments?: Payment[];
   txns?: Txn[];
+  staffPermissions?: StaffPermissions;
   notice?: NoticeBanner;
   onUpdateNotice?: (notice: NoticeBanner) => void;
   onDeletePendingChallan?: (invoiceNo: number) => void;
@@ -53,6 +55,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   products: propProducts,
   payments: propPayments,
   txns: propTxns,
+  staffPermissions: propStaffPermissions,
   notice: propNotice,
   onUpdateNotice,
   onDeletePendingChallan,
@@ -86,8 +89,11 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   const [targetDealForRename, setTargetDealForRename] = useState<DealerDeal | null>(null);
   const [newDealBatchName, setNewDealBatchName] = useState('');
   // Staff Permissions Management State
-  const [staffPerms, setStaffPerms] = useState<StaffPermissions>(() => StorageService.getStaffPermissions());
+  const [staffPerms, setStaffPerms] = useState<StaffPermissions>(() =>
+    propStaffPermissions || StorageService.getStaffPermissions()
+  );
   const [permsStatusMsg, setPermsStatusMsg] = useState('');
+  const [storageTick, setStorageTick] = useState(0);
 
   // Data Control (Backup, Restore & Delete) State
   const [dataStatusMsg, setDataStatusMsg] = useState('');
@@ -118,6 +124,22 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     propNotice ? propNotice.message : StorageService.getNotice().message
   );
   const [noticeStatusMsg, setNoticeStatusMsg] = useState('');
+
+  useEffect(() => {
+    const onUpdate = () => setStorageTick((t) => t + 1);
+    window.addEventListener('app-storage-updated', onUpdate);
+    window.addEventListener('storage', onUpdate);
+    return () => {
+      window.removeEventListener('app-storage-updated', onUpdate);
+      window.removeEventListener('storage', onUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (propStaffPermissions) {
+      setStaffPerms(propStaffPermissions);
+    }
+  }, [propStaffPermissions]);
 
   useEffect(() => {
     if (propUsers && propUsers.length > 0) {
@@ -256,7 +278,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
         password: userPassword.trim(),
         role: userRole,
         phone: userPhone.trim(),
-        createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        createdAt: getNowLocalDateTimeStr(),
       };
       const updated = [...users, newUser];
       setUsers(updated);
@@ -406,11 +428,11 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
 
     // Update in invoices
     const allInvs = StorageService.getInvoices();
-    let count = 0;
+    const changedInvs: Invoice[] = [];
     allInvs.forEach((inv) => {
       if (inv.deal?.trim().toLowerCase() === oldName.toLowerCase()) {
         inv.deal = newName;
-        count++;
+        changedInvs.push(inv);
       }
     });
     StorageService.saveInvoices(allInvs);
@@ -425,10 +447,10 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     setDealers(updatedDealers);
     StorageService.saveDealers(updatedDealers);
     FirestoreSyncService.syncSaveDealers(updatedDealers).catch(console.error);
-    for (const inv of allInvs) {
-      FirestoreSyncService.syncSaveInvoice(inv).catch(console.error);
+    if (changedInvs.length > 0) {
+      FirestoreSyncService.syncSaveInvoices(changedInvs).catch(console.error);
     }
-    setDealStatusMsg(`সফলভাবে ${count} টি চালানে এবং মাস্টার তালিকায় "${oldName}" পরিবর্তন করে "${newName}" করা হয়েছে!`);
+    setDealStatusMsg(`সফলভাবে ${changedInvs.length} টি চালানে এবং মাস্টার তালিকায় "${oldName}" পরিবর্তন করে "${newName}" করা হয়েছে!`);
     setRenameModalOpen(false);
     setTargetDealForRename(null);
     onDataChanged();
@@ -473,7 +495,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `MoccaTiles_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+    link.setAttribute('download', `MoccaTiles_Backup_${getTodayLocalDateStr()}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -575,36 +597,49 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     setTimeout(() => setDataStatusMsg(''), 5000);
   };
 
-  const deliveryChallansHistoryList = StorageService.getDeliveryChallans().filter((ch) => {
-    const q = deliveryHistorySearch.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      ch.challanNo.toLowerCase().includes(q) ||
-      String(ch.invoiceNo).includes(q) ||
-      ch.custName.toLowerCase().includes(q) ||
-      (ch.phone && ch.phone.includes(q)) ||
-      (ch.vehicleNo && ch.vehicleNo.toLowerCase().includes(q))
-    );
-  });
+  const deliveryChallansHistoryList = React.useMemo(
+    () =>
+      StorageService.getDeliveryChallans().filter((ch) => {
+        const q = deliveryHistorySearch.toLowerCase().trim();
+        if (!q) return true;
+        return (
+          ch.challanNo.toLowerCase().includes(q) ||
+          String(ch.invoiceNo).includes(q) ||
+          ch.custName.toLowerCase().includes(q) ||
+          (ch.phone && ch.phone.includes(q)) ||
+          (ch.vehicleNo && ch.vehicleNo.toLowerCase().includes(q))
+        );
+      }),
+    [deliveryHistorySearch, invoices, storageTick]
+  );
 
-  const pendingChallansList = invoices.filter((inv) => {
-    const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
-    if (statusObj.isFullyDelivered) return false;
-    const q = pendingChallanSearch.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      String(inv.no).includes(q) ||
-      inv.custName.toLowerCase().includes(q) ||
-      (inv.phone && inv.phone.includes(q)) ||
-      (inv.deal && inv.deal.toLowerCase().includes(q))
-    );
-  });
+  const pendingChallansList = React.useMemo(
+    () =>
+      invoices.filter((inv) => {
+        const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
+        if (statusObj.isFullyDelivered) return false;
+        const q = pendingChallanSearch.toLowerCase().trim();
+        if (!q) return true;
+        return (
+          String(inv.no).includes(q) ||
+          inv.custName.toLowerCase().includes(q) ||
+          (inv.phone && inv.phone.includes(q)) ||
+          (inv.deal && inv.deal.toLowerCase().includes(q))
+        );
+      }),
+    [invoices, pendingChallanSearch, storageTick]
+  );
+
+  const stockInRecordsCount = React.useMemo(
+    () => StorageService.getStockInRecords().length,
+    [propProducts, storageTick]
+  );
 
   const deleteCatalogOptions: Array<{ key: string; label: string; count: number; desc: string }> = [
     { key: 'invoices', label: 'বিক্রয় চালান / মেমু (Invoices)', count: invoices.length, desc: 'সকল বিক্রয়ের বিল ও মেমু' },
     { key: 'payments', label: 'টাকা জমার রশিদ (Pay Receipts)', count: (propPayments || StorageService.getPayments()).length, desc: 'সকল ক্রেতার জমা রশিদ' },
     { key: 'txns', label: 'আয়-ব্যয় হিসাব (Income/Expense)', count: (propTxns || StorageService.getTxns()).length, desc: 'দোকানের সকল খরচ ও আয় এন্ট্রি' },
-    { key: 'stockInRecords', label: 'স্টক ইন রেকর্ড (Stock In)', count: StorageService.getStockInRecords().length, desc: 'ভেন্ডর ক্রয় ও স্টক ইন ইতিহাস' },
+    { key: 'stockInRecords', label: 'স্টক ইন রেকর্ড (Stock In)', count: stockInRecordsCount, desc: 'ভেন্ডর ক্রয় ও স্টক ইন ইতিহাস' },
     { key: 'deliveryChallans', label: 'ডেলিভারি চালান (Delivery Challans)', count: StorageService.getDeliveryChallans().length, desc: 'ট্রিপ ভিত্তিক মাল ডেলিভারি রেকর্ড' },
     { key: 'customers', label: 'গ্রাহক তালিকা (Customers)', count: customers.length, desc: 'সকল কাস্টমার প্রোফাইল' },
     { key: 'products', label: 'পণ্য ও স্টক (Products)', count: (propProducts || StorageService.getProducts()).length, desc: 'সকল পণ্য ক্যাটালগ ও স্টক' },

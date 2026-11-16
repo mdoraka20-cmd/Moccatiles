@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Customer, DealerDeal, Invoice, Item, Product, ShopConfig, AppUser, StaffPermissions } from '../types';
 import { StorageService } from '../services/storage';
-import { formatMoney, formatQty, parseNum } from '../utils/numberWords';
+import { FirestoreSyncService } from '../services/firestoreSync';
+import { formatMoney, formatQty, parseNum, getTodayLocalDateStr, getNowLocalTimeStr } from '../utils/numberWords';
 import {
   FileText,
   Search,
@@ -28,6 +29,7 @@ interface OrderViewProps {
   products: Product[];
   customers: Customer[];
   invoices: Invoice[];
+  dealers?: DealerDeal[];
   shop: ShopConfig;
   onSaveInvoice: (inv: Invoice, printKind: 'none' | 'invoice' | 'challan') => void;
   onDeleteInvoice: (no: number) => void;
@@ -42,18 +44,11 @@ interface OrderViewProps {
   onRequireAdminAuth?: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
 }
 
-const getTodayLocalDateStr = (): string => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
 export const OrderView: React.FC<OrderViewProps> = ({
   products,
   customers,
   invoices,
+  dealers,
   shop,
   onSaveInvoice,
   onDeleteInvoice,
@@ -129,7 +124,13 @@ export const OrderView: React.FC<OrderViewProps> = ({
   };
 
   // Persistent Dealers master list
-  const [dealersList, setDealersList] = useState<DealerDeal[]>(() => StorageService.getDealers());
+  const [dealersList, setDealersList] = useState<DealerDeal[]>(() => dealers || StorageService.getDealers());
+
+  useEffect(() => {
+    if (dealers) {
+      setDealersList(dealers);
+    }
+  }, [dealers]);
 
   // Items in current invoice
   const [lines, setLines] = useState<Item[]>([]);
@@ -157,6 +158,19 @@ export const OrderView: React.FC<OrderViewProps> = ({
 
   // Right-side list state (defaults to current date's memos)
   const [selectedRightInvoice, setSelectedRightInvoice] = useState<Invoice | null>(null);
+
+  // Keep selectedRightInvoice synchronized with live Firestore updates
+  useEffect(() => {
+    if (selectedRightInvoice) {
+      const live = invoices.find((i) => i.no === selectedRightInvoice.no) || null;
+      if (!live) {
+        setSelectedRightInvoice(null);
+      } else if (live !== selectedRightInvoice) {
+        setSelectedRightInvoice(live);
+      }
+    }
+  }, [invoices, selectedRightInvoice]);
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>(() => getTodayLocalDateStr());
   const [dateTo, setDateTo] = useState<string>(() => getTodayLocalDateStr());
@@ -400,9 +414,14 @@ export const OrderView: React.FC<OrderViewProps> = ({
       return;
     }
 
-    // Auto save deal to master directory
+    // Auto save deal to master directory & sync to Firestore if newly added
     if (deal.trim()) {
+      const beforeCount = StorageService.getDealers().length;
       StorageService.addOrGetDealer(deal.trim());
+      const afterDealers = StorageService.getDealers();
+      if (afterDealers.length !== beforeCount) {
+        FirestoreSyncService.syncSaveDealers(afterDealers).catch(console.error);
+      }
       refreshDealers();
     }
 
@@ -432,15 +451,16 @@ export const OrderView: React.FC<OrderViewProps> = ({
         deal: deal.trim(),
         openDue: 0,
       };
-      const updatedCustomers = [...customers, customerToUse];
+      const updatedCustomers = [...StorageService.getCustomers(), customerToUse];
       StorageService.saveCustomers(updatedCustomers);
     }
 
     const effectivePrevDue = isNewlyCreatedCustomer ? 0 : previousDue;
     const currentNo = editingNo > 0 ? editingNo : invoiceNo;
+    const liveExistingInv = editingNo > 0 ? invoices.find((i) => i.no === currentNo) : undefined;
     const inv: Invoice = {
       no: currentNo,
-      date: `${salesDate} ${new Date().toLocaleTimeString('en-GB')}`,
+      date: `${salesDate} ${getNowLocalTimeStr()}`,
       custId: customerToUse.id,
       custName: customerToUse.name,
       address: address.trim() || customerToUse.address,
@@ -454,7 +474,11 @@ export const OrderView: React.FC<OrderViewProps> = ({
       bank: bankVal,
       bkash: bkashVal,
       items: lines,
-      deliveryStatus: sendToDeliveryQueue ? 'pending' : (editingNo > 0 ? selectedRightInvoice?.deliveryStatus || 'pending' : 'pending'),
+      deliveryStatus: sendToDeliveryQueue
+        ? 'pending'
+        : editingNo > 0
+        ? liveExistingInv?.deliveryStatus || selectedRightInvoice?.deliveryStatus || 'pending'
+        : 'pending',
     };
 
     onSaveInvoice(inv, printKind);
@@ -473,7 +497,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
   const handleLoadSelectedInvoice = (inv: Invoice) => {
     setEditingNo(inv.no);
     setInvoiceNo(inv.no);
-    setSalesDate(inv.date?.slice(0, 10) || new Date().toISOString().slice(0, 10));
+    setSalesDate(inv.date?.slice(0, 10) || getTodayLocalDateStr());
     setCustId(String(inv.custId));
     setCustName(inv.custName);
     setAddress(inv.address);
@@ -508,7 +532,12 @@ export const OrderView: React.FC<OrderViewProps> = ({
     }
 
     StorageService.updateInvoiceDeal(invoiceToChangeDeal.no, trimmedDeal);
+    const beforeCount = StorageService.getDealers().length;
     StorageService.addOrGetDealer(trimmedDeal);
+    const afterDealers = StorageService.getDealers();
+    if (afterDealers.length !== beforeCount) {
+      FirestoreSyncService.syncSaveDealers(afterDealers).catch(console.error);
+    }
     refreshDealers();
 
     if (onUpdateInvoiceDeal) {

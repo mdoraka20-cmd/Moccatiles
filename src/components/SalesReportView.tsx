@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Customer, Invoice, Payment, Product, ShopConfig, Txn } from '../types';
-import { formatMoney, formatQty, formatDateBangla } from '../utils/numberWords';
+import { formatMoney, formatQty, formatDateBangla, getTodayLocalDateStr, parseLocalDateTime } from '../utils/numberWords';
 import { StorageService } from '../services/storage';
 import { BarChart3, Printer, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { printHtmlContent } from '../utils/printHelper';
@@ -42,7 +42,7 @@ export interface ReportData {
 
 const formatDateDDMMYY = (dateStr?: string) => {
   if (!dateStr) return '';
-  const d = new Date(dateStr);
+  const d = parseLocalDateTime(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   const day = String(d.getDate()).padStart(2, '0');
   const mon = String(d.getMonth() + 1).padStart(2, '0');
@@ -51,7 +51,7 @@ const formatDateDDMMYY = (dateStr?: string) => {
 };
 
 const formatMMDDYYYY = (dateStr?: string) => {
-  const d = dateStr ? new Date(dateStr) : new Date();
+  const d = dateStr ? parseLocalDateTime(dateStr) : new Date();
   if (isNaN(d.getTime())) return dateStr || '';
   const day = String(d.getDate()).padStart(2, '0');
   const mon = String(d.getMonth() + 1).padStart(2, '0');
@@ -93,10 +93,11 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
   ];
 
   const [selectedReportId, setSelectedReportId] = useState<number>(0);
-  const [dateFrom, setDateFrom] = useState<string>(
-    new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
-  );
-  const [dateTo, setDateTo] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [dateFrom, setDateFrom] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [dateTo, setDateTo] = useState<string>(() => getTodayLocalDateStr());
 
   // Selection keys for reports
   const [searchFilter, setSearchFilter] = useState<string>('');
@@ -698,7 +699,7 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
         });
 
         const supplierDisplay = selectedReportVendor === 'all' ? (availableVendors[0] || 'Aura') : selectedReportVendor;
-        const stockDateStr = formatMMDDYYYY(dateFrom || new Date().toISOString().slice(0, 10));
+        const stockDateStr = formatMMDDYYYY(dateFrom || getTodayLocalDateStr());
         const printDateStr = getPrintDateTime();
 
         return {

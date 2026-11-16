@@ -3,6 +3,7 @@ import { Customer, Invoice, Payment, Product, ShopConfig, Txn } from '../types';
 import { StorageService } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import { Database, Download, Upload, RefreshCw, AlertTriangle, Check, FileCode } from 'lucide-react';
+import { getTodayLocalDateStr } from '../utils/numberWords';
 
 interface DataBackupViewProps {
   products: Product[];
@@ -32,7 +33,7 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `InventoryBilling_Backup_${new Date().toISOString().slice(0, 10)}.json`);
+    link.setAttribute('download', `InventoryBilling_Backup_${getTodayLocalDateStr()}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -161,10 +162,12 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
     }
   };
 
-  const handleResetToSample = () => {
+  const handleResetToSample = async () => {
     StorageService.resetToDefaults();
+    const jsonStr = StorageService.exportAllAsJSON();
+    await FirestoreSyncService.syncFullRestoreFromJSON(jsonStr);
     onDataReload();
-    setMsg('ডিফল্ট নমুনা ডাটা সফলভাবে সেট করা হয়েছে!');
+    setMsg('ডিফল্ট নমুনা ডাটা সফলভাবে সেট এবং ক্লাউড সিঙ্ক করা হয়েছে!');
     setTimeout(() => setMsg(''), 4000);
   };
 

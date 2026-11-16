@@ -78,15 +78,30 @@ export const ProductView: React.FC<ProductViewProps> = ({
   const [filterVendor, setFilterVendor] = useState<string>('all');
   const [filterGrade, setFilterGrade] = useState<string>('all');
 
-  // Keep categories and vendors in sync with Storage / Firebase live changes
+  // Keep categories, vendors, and selected product in sync with Storage / Firebase live changes
   useEffect(() => {
     const handleStorage = () => {
       setCategories(StorageService.getCategories());
       setVendors(StorageService.getVendors());
     };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    window.addEventListener('app-storage-updated', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('app-storage-updated', handleStorage);
+    };
   }, []);
+
+  useEffect(() => {
+    if (selectedProd) {
+      const live = products.find((p) => p.id === selectedProd.id) || null;
+      if (!live) {
+        setSelectedProd(null);
+      } else if (live !== selectedProd) {
+        setSelectedProd(live);
+      }
+    }
+  }, [products, selectedProd]);
 
   const showCatMsg = (msg: string) => {
     setCatFeedbackMsg(msg);
@@ -122,9 +137,12 @@ export const ProductView: React.FC<ProductViewProps> = ({
       setEditingVendorOriginal(null);
       return;
     }
-    const { updatedVendors, affectedCount } = StorageService.renameVendor(oldName, trimmedNew);
+    const { updatedVendors, affectedCount, affectedProducts } = StorageService.renameVendor(oldName, trimmedNew);
     setVendors(updatedVendors);
     FirestoreSyncService.syncMetadataLists(undefined, updatedVendors).catch(console.error);
+    if (affectedProducts.length > 0) {
+      FirestoreSyncService.syncSaveProducts(affectedProducts).catch(console.error);
+    }
     if (vendor.toLowerCase() === oldName.toLowerCase()) {
       setVendor(trimmedNew);
     }
@@ -184,9 +202,12 @@ export const ProductView: React.FC<ProductViewProps> = ({
       setEditingCatOriginal(null);
       return;
     }
-    const { updatedCategories, affectedCount } = StorageService.renameCategory(oldName, trimmedNew);
+    const { updatedCategories, affectedCount, affectedProducts } = StorageService.renameCategory(oldName, trimmedNew);
     setCategories(updatedCategories);
     FirestoreSyncService.syncMetadataLists(updatedCategories).catch(console.error);
+    if (affectedProducts.length > 0) {
+      FirestoreSyncService.syncSaveProducts(affectedProducts).catch(console.error);
+    }
     if (category.toLowerCase() === oldName.toLowerCase()) {
       setCategory(trimmedNew);
     }
@@ -314,6 +335,9 @@ export const ProductView: React.FC<ProductViewProps> = ({
       qtyPack: parseNum(qtyPack),
       rate: parseNum(rate),
       price: parseNum(price),
+      stockBox: selectedProd?.stockBox ?? 0,
+      stockPiece: selectedProd?.stockPiece ?? 0,
+      stockSft: selectedProd?.stockSft ?? 0,
     };
 
     if (category.trim()) {

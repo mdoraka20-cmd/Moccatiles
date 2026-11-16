@@ -103,9 +103,46 @@ export function inWords(amt: number): string {
   return s + ' ONLY';
 }
 
+export function getTodayLocalDateStr(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function getNowLocalTimeStr(): string {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+export function getNowLocalDateTimeStr(): string {
+  return `${getTodayLocalDateStr()} ${getNowLocalTimeStr()}`;
+}
+
+export function parseLocalDateTime(dateStr: string | Date): Date {
+  if (dateStr instanceof Date) return dateStr;
+  const trimmed = String(dateStr).trim();
+  const m = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      m[4] ? Number(m[4]) : 0,
+      m[5] ? Number(m[5]) : 0,
+      m[6] ? Number(m[6]) : 0
+    );
+  }
+  return new Date(trimmed);
+}
+
 export function formatDateBangla(dateStr: string | Date): string {
   if (!dateStr) return '';
-  const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  const d = parseLocalDateTime(dateStr);
   if (isNaN(d.getTime())) return dateStr as string;
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -115,7 +152,7 @@ export function formatDateBangla(dateStr: string | Date): string {
 
 export function formatDateTimeBangla(dateStr: string | Date): string {
   if (!dateStr) return '';
-  const d = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  const d = parseLocalDateTime(dateStr);
   if (isNaN(d.getTime())) return dateStr as string;
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');

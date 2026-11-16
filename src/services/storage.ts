@@ -15,6 +15,7 @@ import {
   StaffPermissions,
   NoticeBanner,
 } from '../types';
+import { getTodayLocalDateStr } from '../utils/numberWords';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'tiles_billing_products_v2',
@@ -246,8 +247,7 @@ export const initialCustomers: Customer[] = [
   },
 ];
 
-const now = new Date();
-const todayStr = now.toISOString().slice(0, 10);
+const todayStr = getTodayLocalDateStr();
 
 export const initialPayments: Payment[] = [
   {
@@ -401,6 +401,12 @@ export const initialTxns: Txn[] = [
 ];
 
 export class StorageService {
+  static notifyUpdate() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('app-storage-updated'));
+    }
+  }
+
   static getShop(): ShopConfig {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.SHOP);
@@ -659,32 +665,39 @@ export class StorageService {
     return current;
   }
 
-  static renameCategory(oldName: string, newName: string): { updatedCategories: string[]; affectedCount: number } {
+  static renameCategory(
+    oldName: string,
+    newName: string
+  ): { updatedCategories: string[]; affectedCount: number; affectedProducts: Product[] } {
     const oldTrimmed = oldName.trim();
     const newTrimmed = newName.trim();
-    if (!oldTrimmed || !newTrimmed) return { updatedCategories: this.getCategories(), affectedCount: 0 };
+    if (!oldTrimmed || !newTrimmed) {
+      return { updatedCategories: this.getCategories(), affectedCount: 0, affectedProducts: [] };
+    }
 
     const current = this.getCategories();
-    const updatedCategories = current.map((c) => (c.toLowerCase() === oldTrimmed.toLowerCase() ? newTrimmed : c)).sort();
+    const updatedCategories = current
+      .map((c) => (c.toLowerCase() === oldTrimmed.toLowerCase() ? newTrimmed : c))
+      .sort();
     this.saveCategories(updatedCategories);
 
     // Update in products
     const products = this.getProducts();
-    let affectedCount = 0;
+    const affectedProducts: Product[] = [];
     products.forEach((p) => {
       if (p.category && p.category.toLowerCase() === oldTrimmed.toLowerCase()) {
         p.category = newTrimmed;
         if (p.code) {
           p.name = `${p.code}-${newTrimmed}`;
         }
-        affectedCount++;
+        affectedProducts.push(p);
       }
     });
-    if (affectedCount > 0) {
+    if (affectedProducts.length > 0) {
       this.saveProducts(products);
     }
 
-    return { updatedCategories, affectedCount };
+    return { updatedCategories, affectedCount: affectedProducts.length, affectedProducts };
   }
 
   static deleteCategory(categoryName: string): string[] {
@@ -730,29 +743,36 @@ export class StorageService {
     return current;
   }
 
-  static renameVendor(oldName: string, newName: string): { updatedVendors: string[]; affectedCount: number } {
+  static renameVendor(
+    oldName: string,
+    newName: string
+  ): { updatedVendors: string[]; affectedCount: number; affectedProducts: Product[] } {
     const oldTrimmed = oldName.trim();
     const newTrimmed = newName.trim();
-    if (!oldTrimmed || !newTrimmed) return { updatedVendors: this.getVendors(), affectedCount: 0 };
+    if (!oldTrimmed || !newTrimmed) {
+      return { updatedVendors: this.getVendors(), affectedCount: 0, affectedProducts: [] };
+    }
 
     const current = this.getVendors();
-    const updatedVendors = current.map((v) => (v.toLowerCase() === oldTrimmed.toLowerCase() ? newTrimmed : v)).sort();
+    const updatedVendors = current
+      .map((v) => (v.toLowerCase() === oldTrimmed.toLowerCase() ? newTrimmed : v))
+      .sort();
     this.saveVendors(updatedVendors);
 
     // Update in products
     const products = this.getProducts();
-    let affectedCount = 0;
+    const affectedProducts: Product[] = [];
     products.forEach((p) => {
       if (p.vendor && p.vendor.toLowerCase() === oldTrimmed.toLowerCase()) {
         p.vendor = newTrimmed;
-        affectedCount++;
+        affectedProducts.push(p);
       }
     });
-    if (affectedCount > 0) {
+    if (affectedProducts.length > 0) {
       this.saveProducts(products);
     }
 
-    return { updatedVendors, affectedCount };
+    return { updatedVendors, affectedCount: affectedProducts.length, affectedProducts };
   }
 
   static deleteVendor(vendorName: string): string[] {

@@ -1,5 +1,5 @@
 import { Customer, Invoice, Payment, Product, ShopConfig, AppUser } from '../types';
-import { formatMoney } from '../utils/numberWords';
+import { formatMoney, getTodayLocalDateStr } from '../utils/numberWords';
 import {
   FileText,
   DollarSign,
@@ -46,7 +46,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   currentUser,
   onOpenLoginModal,
 }) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getTodayLocalDateStr();
 
   // Daily invoices
   const todayInvoices = invoices.filter((inv) => (inv.date || '').startsWith(today));

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Txn } from '../types';
 import { StorageService } from '../services/storage';
-import { formatMoney, parseNum } from '../utils/numberWords';
+import { formatMoney, parseNum, getTodayLocalDateStr } from '../utils/numberWords';
 import { TrendingUp, Trash2, Plus, Check } from 'lucide-react';
 
 interface IncomeExpenseViewProps {
@@ -19,13 +19,21 @@ export const IncomeExpenseView: React.FC<IncomeExpenseViewProps> = ({
   currentUser,
   onRequireAdminAuth,
 }) => {
-  const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState<string>(() => getTodayLocalDateStr());
   const [isIncome, setIsIncome] = useState<boolean>(false);
   const [head, setHead] = useState<string>('');
   const [amount, setAmount] = useState<string>('');
   const [selectedTxn, setSelectedTxn] = useState<Txn | null>(null);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  useEffect(() => {
+    if (selectedTxn) {
+      const live = txns.find((t) => t.id === selectedTxn.id) || null;
+      if (!live) setSelectedTxn(null);
+      else if (live !== selectedTxn) setSelectedTxn(live);
+    }
+  }, [txns, selectedTxn]);
+
+  const todayStr = getTodayLocalDateStr();
   const todayIncome = txns
     .filter((t) => t.isIncome && t.date === todayStr)
     .reduce((s, t) => s + (t.amount || 0), 0);

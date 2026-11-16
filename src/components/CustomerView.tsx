@@ -55,6 +55,18 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Keep selectedCust synced with live customer updates/deletes
+  useEffect(() => {
+    if (selectedCust) {
+      const live = customers.find((c) => c.id === selectedCust.id) || null;
+      if (!live) {
+        setSelectedCust(null);
+      } else if (live !== selectedCust) {
+        setSelectedCust(live);
+      }
+    }
+  }, [customers, selectedCust]);
+
   // Matched existing customers for Name field
   const nameMatchedCustomers = useMemo(() => {
     const q = name.trim().toLowerCase();
