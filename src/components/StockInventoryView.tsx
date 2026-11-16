@@ -31,6 +31,8 @@ import {
   FileText,
   Lock,
   Trash2,
+  History,
+  MinusCircle,
 } from 'lucide-react';
 import { ProductSearchSelect } from './ProductSearchSelect';
 
@@ -45,6 +47,7 @@ interface StockInventoryViewProps {
     invoice?: Invoice;
     deliveryChallan?: DeliveryChallan;
     stockInRecord?: StockInRecord;
+    reportData?: any;
   }) => void;
   currentUser?: AppUser;
   permissions?: StaffPermissions;
@@ -65,10 +68,14 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   onDeleteDeliveryChallan,
   onRequireAdminAuth,
 }) => {
-  const [subTab, setSubTab] = useState<'overview' | 'stock_in' | 'pending_challan' | 'challan_history'>('pending_challan');
+  const [subTab, setSubTab] = useState<
+    'overview' | 'stock_in' | 'stock_out' | 'pending_challan' | 'challan_history' | 'product_history'
+  >('pending_challan');
 
   // Search queries
   const [searchQuery, setSearchQuery] = useState('');
+  const [actionErrorMsg, setActionErrorMsg] = useState('');
+  const [modalErrorMsg, setModalErrorMsg] = useState('');
 
   // ================= Stock In State =================
   const [vendorName, setVendorName] = useState('');
@@ -105,6 +112,25 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   const [driverPhone, setDriverPhone] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
 
+  // ================= Manual Stock Out State =================
+  const [manualRefInput, setManualRefInput] = useState(() => `M-${StorageService.nextDeliveryChallanId()}`);
+  const [manualOutDate, setManualOutDate] = useState(getTodayLocalDateStr());
+  const [manualOutRecipient, setManualOutRecipient] = useState('');
+  const [manualOutNote, setManualOutNote] = useState('');
+  const [manualOutItems, setManualOutItems] = useState<DeliveryItem[]>([]);
+  const [outProdId, setOutProdId] = useState('');
+  const [outBox, setOutBox] = useState('');
+  const [outPiece, setOutPiece] = useState('');
+  const [outSft, setOutSft] = useState('');
+  const [manualOutError, setManualOutError] = useState('');
+
+  // ================= Stock Product History Filter State =================
+  const [historyProdId, setHistoryProdId] = useState('');
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'all' | 'in' | 'challan_out' | 'manual_out'>('all');
+  const [historyDateFrom, setHistoryDateFrom] = useState('');
+  const [historyDateTo, setHistoryDateTo] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [deleteChallanTarget, setDeleteChallanTarget] = useState<Invoice | null>(null);
   const [deleteDeliveryHistoryTarget, setDeleteDeliveryHistoryTarget] = useState<DeliveryChallan | null>(null);
@@ -128,8 +154,15 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     currentUser?.role === 'admin' || Boolean(permissions?.canDeleteDeliveryChallan);
 
   const showMsg = (msg: string) => {
+    setActionErrorMsg('');
     setFeedbackMsg(msg);
-    setTimeout(() => setFeedbackMsg(''), 4000);
+    setTimeout(() => setFeedbackMsg(''), 5500);
+  };
+
+  const showErrorMsg = (msg: string) => {
+    setFeedbackMsg('');
+    setActionErrorMsg(msg);
+    setTimeout(() => setActionErrorMsg(''), 7000);
   };
 
   const executeDeletePendingChallan = (inv: Invoice) => {
@@ -209,13 +242,13 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
   const handleAddStockInItem = () => {
     const prod = products.find((pr) => pr.id === Number(inProdId));
     if (!prod) {
-      alert('পণ্য নির্বাচন করুন।');
+      showErrorMsg('পণ্য নির্বাচন করুন।');
       return;
     }
     const b = parseNum(inBox);
     const pc = parseNum(inPiece);
     if (b <= 0 && pc <= 0) {
-      alert('বক্স বা পিস সংখ্যা দিন।');
+      showErrorMsg('বক্স বা পিস সংখ্যা দিন।');
       return;
     }
 
@@ -238,19 +271,20 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     setInSft('');
     setInRate('');
     setInTotal('0.00');
+    setActionErrorMsg('');
   };
 
   const handleSaveStockIn = () => {
     if (!canStockIn) {
-      alert('এডমিন কর্তৃক স্টাফদের স্টক ইন এন্ট্রি করার পারমিশন বন্ধ রাখা হয়েছে।');
+      showErrorMsg('এডমিন কর্তৃক স্টাফদের স্টক ইন এন্ট্রি করার পারমিশন বন্ধ রাখা হয়েছে।');
       return;
     }
     if (!vendorName.trim()) {
-      alert('ভেন্ডর / সরবরাহকারীর নাম দিন।');
+      showErrorMsg('ভেন্ডর / সরবরাহকারীর নাম দিন।');
       return;
     }
     if (stockInItems.length === 0) {
-      alert('কমপক্ষে একটি পণ্য স্টক ইন তালিকায় যোগ করুন।');
+      showErrorMsg('কমপক্ষে একটি পণ্য স্টক ইন তালিকায় যোগ করুন।');
       return;
     }
 
@@ -286,20 +320,182 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     });
   };
 
-  // ================= Split & Full Delivery Handlers =================
-  const openDeliveryModal = (inv: Invoice) => {
-    if (!canDispatch) {
-      alert('এডমিন কর্তৃক স্টাফদের চালান ডেলিভারি ডিসপ্যাচ করার পারমিশন বন্ধ রাখা হয়েছে।');
+  // ================= Manual Stock Out Helpers =================
+  const selectedManualOutProd = products.find((pr) => pr.id === Number(outProdId));
+
+  const handleSelectManualOutProduct = (pId: string) => {
+    setManualOutError('');
+    setOutProdId(pId);
+    setOutBox('');
+    setOutPiece('');
+    setOutSft('');
+  };
+
+  const calcManualOutSft = (prod: Product, b: number, pc: number) => {
+    if (prod.isTile) {
+      const sft =
+        b * (prod.sftPack || 0) + (prod.qtyPack > 0 ? (pc * (prod.sftPack || 0)) / prod.qtyPack : 0);
+      setOutSft((Math.round(sft * 100) / 100).toFixed(2));
+    } else {
+      setOutSft('0.00');
+    }
+  };
+
+  const handleAddManualOutItem = () => {
+    setManualOutError('');
+    const prod = products.find((pr) => pr.id === Number(outProdId));
+    if (!prod) {
+      setManualOutError('তালিকা থেকে সঠিক পণ্য নির্বাচন করুন।');
       return;
     }
+    if (manualOutItems.some((it) => it.productId === prod.id)) {
+      setManualOutError(`"${prod.name}" ইতিমধ্যে ম্যানুয়াল স্টক আউট তালিকায় যোগ করা আছে।`);
+      return;
+    }
+    const b = parseNum(outBox);
+    const pc = parseNum(outPiece);
+    if (b <= 0 && pc <= 0) {
+      setManualOutError('বক্স বা পিস সংখ্যা দিন।');
+      return;
+    }
+
+    const avail = StorageService.getAvailableProductStock(prod);
+    if (!avail.hasStock) {
+      setManualOutError(`পণ্য "${prod.name}" বর্তমানে স্টকে নেই (০ স্টক) — স্টক আউট করা যাবে না।`);
+      return;
+    }
+
+    if (prod.isTile && (prod.qtyPack || 0) > 0) {
+      const reqPcs = b * prod.qtyPack + pc;
+      if (reqPcs > avail.totalPieces) {
+        setManualOutError(
+          `পণ্য "${prod.name}" এর বর্তমান স্টক আছে ${avail.stockBox} বক্স ${avail.stockPiece} পিস। এর চেয়ে বেশি স্টক আউট করা যাবে না।`
+        );
+        return;
+      }
+    } else if (b > avail.stockBox || pc > avail.stockPiece) {
+      setManualOutError(
+        `পণ্য "${prod.name}" এর বর্তমান স্টক আছে ${avail.stockBox} বক্স ${avail.stockPiece} পিস। এর চেয়ে বেশি স্টক আউট করা যাবে না।`
+      );
+      return;
+    }
+
+    const finalSft = prod.isTile ? parseNum(outSft) : 0;
+    const newItem: DeliveryItem = {
+      productId: prod.id,
+      name: prod.name,
+      dim: prod.isTile ? `${prod.w.toFixed(2)} X ${prod.h.toFixed(2)}` : '0.00 X 0.00',
+      box: b,
+      piece: pc,
+      sft: finalSft,
+      isTile: prod.isTile,
+    };
+
+    setManualOutItems([...manualOutItems, newItem]);
+    setOutProdId('');
+    setOutBox('');
+    setOutPiece('');
+    setOutSft('');
+  };
+
+  const handleSaveManualStockOut = () => {
+    setManualOutError('');
+    if (!canDispatch) {
+      setManualOutError('এডমিন কর্তৃক স্টাফদের স্টক আউট / ডেলিভারি পারমিশন বন্ধ রাখা হয়েছে।');
+      return;
+    }
+    const trimmedRef = manualRefInput.trim();
+    if (!trimmedRef) {
+      setManualOutError('ম্যানুয়াল নম্বর / স্লিপ নম্বর দিন (যেমন: M-101 বা 501)।');
+      return;
+    }
+    if (manualOutItems.length === 0) {
+      setManualOutError('কমপক্ষে একটি পণ্য ম্যানুয়াল স্টক আউট তালিকায় যোগ করুন।');
+      return;
+    }
+
+    // Double-check live stock before committing
+    for (const it of manualOutItems) {
+      const prod = products.find((p) => p.id === it.productId);
+      const avail = StorageService.getAvailableProductStock(prod);
+      if (!prod || !avail.hasStock) {
+        setManualOutError(`পণ্য "${it.name}" বর্তমানে স্টকে নেই।`);
+        return;
+      }
+      if (prod.isTile && (prod.qtyPack || 0) > 0) {
+        const reqPcs = it.box * prod.qtyPack + it.piece;
+        if (reqPcs > avail.totalPieces) {
+          setManualOutError(
+            `পণ্য "${it.name}" এর বর্তমান স্টক (${avail.stockBox}B / ${avail.stockPiece}P) পর্যাপ্ত নয়।`
+          );
+          return;
+        }
+      } else if (it.box > avail.stockBox || it.piece > avail.stockPiece) {
+        setManualOutError(
+          `পণ্য "${it.name}" এর বর্তমান স্টক (${avail.stockBox}B / ${avail.stockPiece}P) পর্যাপ্ত নয়।`
+        );
+        return;
+      }
+    }
+
+    const nextId = StorageService.nextDeliveryChallanId();
+    const challanCode = trimmedRef.toUpperCase().startsWith('MAN') ? trimmedRef : `MAN-${trimmedRef}`;
+    const manualChallan: DeliveryChallan = {
+      id: nextId,
+      challanNo: challanCode,
+      outType: 'manual',
+      manualRefNo: trimmedRef,
+      invoiceNo: 0,
+      custId: 0,
+      custName: manualOutRecipient.trim() || 'ম্যানুয়াল স্টক আউট',
+      address: '',
+      phone: '',
+      deal: '',
+      date: `${manualOutDate} ${getNowLocalTimeStr()}`,
+      vehicleNo: 'ম্যানুয়াল স্টক আউট',
+      note: manualOutNote.trim(),
+      dispatchedBy: StorageService.getCurrentUser().name,
+      items: manualOutItems,
+    };
+
+    FirestoreSyncService.syncAddDeliveryChallan(manualChallan).catch(console.error);
+    onStockUpdated();
+    showMsg(`ম্যানুয়াল স্টক আউট #${trimmedRef} সফলভাবে সম্পন্ন ও স্টক মাইনাস হয়েছে!`);
+
+    // Reset manual form
+    setManualRefInput(`M-${StorageService.nextDeliveryChallanId()}`);
+    setManualOutRecipient('');
+    setManualOutNote('');
+    setManualOutItems([]);
+
+    onOpenPrintModal({
+      isOpen: true,
+      type: 'delivery_challan',
+      deliveryChallan: manualChallan,
+    });
+  };
+
+  // ================= Split & Full Delivery Handlers (Live Stock Validated) =================
+  const openDeliveryModal = (inv: Invoice) => {
+    if (!canDispatch) {
+      showErrorMsg('এডমিন কর্তৃক স্টাফদের চালান ডেলিভারি ডিসপ্যাচ করার পারমিশন বন্ধ রাখা হয়েছে।');
+      return;
+    }
+    setModalErrorMsg('');
     const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
     const inputs: { [productId: number]: { box: string; piece: string; sft: string } } = {};
     statusObj.itemStatuses.forEach((it) => {
-      // By default prefill with remaining
+      const prod = products.find((p) => p.id === it.productId);
+      const disp = StorageService.computeDispatchableForRemaining(
+        prod,
+        it.remainingBox || 0,
+        it.remainingPiece || 0,
+        it.remainingSft || 0
+      );
       inputs[it.productId] = {
-        box: String(it.remainingBox || 0),
-        piece: String(it.remainingPiece || 0),
-        sft: String(it.remainingSft || 0),
+        box: String(disp.dispatchBox || 0),
+        piece: String(disp.dispatchPiece || 0),
+        sft: String(disp.dispatchSft || 0),
       };
     });
 
@@ -311,10 +507,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     setDeliveryNote('');
   };
 
-  // 1-Click Full Delivery directly from table
+  // 1-Click Full Delivery directly from table (only dispatches in-stock quantities; out-of-stock stay pending)
   const handleFullDeliveryInstant = (inv: Invoice) => {
     if (!canDispatch) {
-      alert('এডমিন কর্তৃক স্টাফদের চালান ডেলিভারি ডিসপ্যাচ করার পারমিশন বন্ধ রাখা হয়েছে।');
+      showErrorMsg('এডমিন কর্তৃক স্টাফদের চালান ডেলিভারি ডিসপ্যাচ করার পারমিশন বন্ধ রাখা হয়েছে।');
       return;
     }
     const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
@@ -322,20 +518,41 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       return;
     }
 
-    const dispatchItems: DeliveryItem[] = statusObj.itemStatuses
+    const dispatchItems: DeliveryItem[] = [];
+    const pendingByNoStockNames: string[] = [];
+
+    statusObj.itemStatuses
       .filter((it) => it.remainingBox > 0 || it.remainingPiece > 0)
-      .map((it) => ({
-        productId: it.productId,
-        name: it.name,
-        dim: it.dim,
-        box: it.remainingBox,
-        piece: it.remainingPiece,
-        sft: it.remainingSft,
-        isTile: it.isTile,
-      }));
+      .forEach((it) => {
+        const prod = products.find((p) => p.id === it.productId);
+        const disp = StorageService.computeDispatchableForRemaining(
+          prod,
+          it.remainingBox,
+          it.remainingPiece,
+          it.remainingSft
+        );
+        if (disp.hasAnyStock && (disp.dispatchBox > 0 || disp.dispatchPiece > 0)) {
+          dispatchItems.push({
+            productId: it.productId,
+            name: it.name,
+            dim: it.dim,
+            box: disp.dispatchBox,
+            piece: disp.dispatchPiece,
+            sft: disp.dispatchSft,
+            isTile: it.isTile,
+          });
+          if (disp.isPartialByStock) {
+            pendingByNoStockNames.push(`${it.name} (আংশিক স্টক)`);
+          }
+        } else {
+          pendingByNoStockNames.push(it.name);
+        }
+      });
 
     if (dispatchItems.length === 0) {
-      alert('ডেলিভারি করার মতো কোনো অবশিষ্ট পণ্য নেই।');
+      showErrorMsg(
+        `চালান #${inv.no} এর কোনো পণ্যই বর্তমানে স্টকে নেই (${pendingByNoStockNames.join(', ')})। স্টকে না থাকা পর্যন্ত চালানটি পেন্ডিং ঘরেই থাকবে।`
+      );
       return;
     }
 
@@ -344,6 +561,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     const deliveryChallan: DeliveryChallan = {
       id: StorageService.nextDeliveryChallanId(),
       challanNo,
+      outType: 'challan',
       invoiceNo: inv.no,
       custId: inv.custId,
       custName: inv.custName,
@@ -351,15 +569,24 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       phone: inv.phone,
       deal: inv.deal,
       date: getNowLocalDateTimeStr(),
-      vehicleNo: 'ফুল ডেলিভারি',
-      note: '১-ক্লিকে সম্পূর্ণ চালান ডেলিভারি সম্পন্ন',
+      vehicleNo: pendingByNoStockNames.length > 0 ? 'স্টক অনুযায়ী ডেলিভারি' : 'ফুল ডেলিভারি',
+      note:
+        pendingByNoStockNames.length > 0
+          ? `স্টকে থাকা পণ্য ডেলিভারি করা হয়েছে; স্টক না থাকায় পেন্ডিং: ${pendingByNoStockNames.join(', ')}`
+          : '১-ক্লিকে সম্পূর্ণ চালান ডেলিভারি সম্পন্ন',
       dispatchedBy: StorageService.getCurrentUser().name,
       items: dispatchItems,
     };
 
     FirestoreSyncService.syncAddDeliveryChallan(deliveryChallan).catch(console.error);
     onStockUpdated();
-    showMsg(`চালান ${challanNo} সম্পূর্ণ ডেলিভারি সম্পন্ন ও স্টক আউট হয়েছে!`);
+    if (pendingByNoStockNames.length > 0) {
+      showMsg(
+        `চালান ${challanNo} থেকে স্টকে থাকা পণ্যের স্টক মাইনাস ও ডেলিভারি হয়েছে। স্টকে না থাকায় পেন্ডিং এ আছে: ${pendingByNoStockNames.join(', ')}`
+      );
+    } else {
+      showMsg(`চালান ${challanNo} সম্পূর্ণ ডেলিভারি সম্পন্ন ও স্টক আউট হয়েছে!`);
+    }
 
     // Open delivery challan slip print
     onOpenPrintModal({
@@ -369,9 +596,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     });
   };
 
-  // Confirm custom / split delivery from modal
+  // Confirm custom / split delivery from modal (enforces live stock!)
   const handleConfirmSplitDelivery = () => {
     if (!deliveryModalInvoice) return;
+    setModalErrorMsg('');
     const statusObj = StorageService.getInvoiceDeliveryStatus(deliveryModalInvoice.no);
 
     const dispatchItems: DeliveryItem[] = [];
@@ -383,17 +611,39 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
       const pc = parseNum(input.piece);
 
       if (b > it.remainingBox || (b === it.remainingBox && pc > it.remainingPiece)) {
-        alert(
+        setModalErrorMsg(
           `পণ্য '${it.name}' এর অবশিষ্ট বাকি আছে ${it.remainingBox} বক্স ${it.remainingPiece} পিস। এর চেয়ে বেশি ডেলিভারি দেওয়া সম্ভব নয়।`
         );
         return;
       }
 
       if (b > 0 || pc > 0) {
-        hasQty = true;
         const prod = products.find((pr) => pr.id === it.productId);
+        const avail = StorageService.getAvailableProductStock(prod);
+        if (!prod || !avail.hasStock) {
+          setModalErrorMsg(
+            `পণ্য '${it.name}' বর্তমানে স্টকে নেই (০ স্টক)! এটি পেন্ডিং এ রেখে শুধুমাত্র স্টকে থাকা পণ্য ডেলিভারি দিন।`
+          );
+          return;
+        }
+        if (prod.isTile && (prod.qtyPack || 0) > 0) {
+          const reqPcs = b * prod.qtyPack + pc;
+          if (reqPcs > avail.totalPieces) {
+            setModalErrorMsg(
+              `পণ্য '${it.name}' এর বর্তমান স্টক আছে ${avail.stockBox} বক্স ${avail.stockPiece} পিস। স্টকের চেয়ে বেশি ডেলিভারি দেওয়া যাবে না (বাকিটা পেন্ডিং থাকবে)।`
+            );
+            return;
+          }
+        } else if (b > avail.stockBox || pc > avail.stockPiece) {
+          setModalErrorMsg(
+            `পণ্য '${it.name}' এর বর্তমান স্টক আছে ${avail.stockBox} বক্স ${avail.stockPiece} পিস। স্টকের চেয়ে বেশি ডেলিভারি দেওয়া যাবে না।`
+          );
+          return;
+        }
+
+        hasQty = true;
         let sft = 0;
-        if (prod && prod.isTile) {
+        if (prod.isTile) {
           sft = b * (prod.sftPack || 0) + (prod.qtyPack > 0 ? (pc * (prod.sftPack || 0)) / prod.qtyPack : 0);
           sft = Math.round(sft * 100) / 100;
         }
@@ -410,7 +660,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     }
 
     if (!hasQty) {
-      alert('কমপক্ষে একটি পণ্যের ডেলিভারি বক্স বা পিস সংখ্যা দিন।');
+      setModalErrorMsg('স্টকে থাকা কমপক্ষে একটি পণ্যের ডেলিভারি বক্স বা পিস সংখ্যা দিন (স্টকশূন্য পণ্য ০ রেখে পেন্ডিং এ থাকবে)।');
       return;
     }
 
@@ -419,6 +669,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     const deliveryChallan: DeliveryChallan = {
       id: StorageService.nextDeliveryChallanId(),
       challanNo,
+      outType: 'challan',
       invoiceNo: deliveryModalInvoice.no,
       custId: deliveryModalInvoice.custId,
       custName: deliveryModalInvoice.custName,
@@ -437,7 +688,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     FirestoreSyncService.syncAddDeliveryChallan(deliveryChallan).catch(console.error);
     onStockUpdated();
     setDeliveryModalInvoice(null);
-    showMsg(`চালান ${challanNo} সফলভাবে ডেলিভারি ও স্টক আউট হয়েছে!`);
+    showMsg(`চালান ${challanNo} সফলভাবে ডেলিভারি ও স্টক মাইনাস হয়েছে! (অবশিষ্ট পণ্য পেন্ডিং এ থাকবে)`);
 
     // Open delivery slip print
     onOpenPrintModal({
@@ -456,10 +707,105 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
     [products, storageTick]
   );
 
+  // Unified Stock Product History Movements (Stock In + Challan Out + Manual Out)
+  const productStockMovements = React.useMemo(() => {
+    type Movement = {
+      uid: string;
+      date: string;
+      kind: 'in' | 'challan_out' | 'manual_out';
+      sourceLabel: string;
+      refDisplay: string;
+      productId: number;
+      productName: string;
+      productCode: string;
+      partyName: string;
+      note: string;
+      box: number;
+      piece: number;
+      sft: number;
+      userBy: string;
+    };
+    const list: Movement[] = [];
+
+    stockInHistory.forEach((rec) => {
+      (rec.items || []).forEach((it, idx) => {
+        const prod = products.find((p) => p.id === it.productId);
+        const refParts: string[] = [];
+        if (rec.vendorChallanNo && rec.vendorChallanNo !== '—') refParts.push(`ভেন্ডর চালান: ${rec.vendorChallanNo}`);
+        if (rec.referenceNo && rec.referenceNo !== '—') refParts.push(`PO: ${rec.referenceNo}`);
+        list.push({
+          uid: `in-${rec.id}-${idx}-${it.productId}`,
+          date: rec.date || '',
+          kind: 'in',
+          sourceLabel: 'স্টক ইন (+)',
+          refDisplay: refParts.length > 0 ? refParts.join(' | ') : `স্টক ইন #SI-${rec.id}`,
+          productId: it.productId,
+          productName: it.name || prod?.name || `#${it.productId}`,
+          productCode: prod?.code || '',
+          partyName: rec.vendorName || '—',
+          note: rec.note || '',
+          box: it.box || 0,
+          piece: it.piece || 0,
+          sft: it.sft || 0,
+          userBy: rec.receivedBy || '—',
+        });
+      });
+    });
+
+    deliveryChallansHistory.forEach((ch) => {
+      const isManual = ch.outType === 'manual' || ch.invoiceNo === 0;
+      (ch.items || []).forEach((it, idx) => {
+        const prod = products.find((p) => p.id === it.productId);
+        list.push({
+          uid: `out-${ch.id}-${idx}-${it.productId}`,
+          date: ch.date || '',
+          kind: isManual ? 'manual_out' : 'challan_out',
+          sourceLabel: isManual ? 'ম্যানুয়াল আউট (-)' : 'চালান আউট (-)',
+          refDisplay: isManual
+            ? `ম্যানুয়াল নং: ${ch.manualRefNo || ch.challanNo}`
+            : `চালান: ${ch.challanNo} (ইনভয়েস #${ch.invoiceNo})`,
+          productId: it.productId,
+          productName: it.name || prod?.name || `#${it.productId}`,
+          productCode: prod?.code || '',
+          partyName: isManual ? ch.custName || 'ম্যানুয়াল স্টক আউট' : `${ch.custName}${ch.deal ? ` (${ch.deal})` : ''}`,
+          note: ch.note || '',
+          box: it.box || 0,
+          piece: it.piece || 0,
+          sft: it.sft || 0,
+          userBy: ch.dispatchedBy || '—',
+        });
+      });
+    });
+
+    // Sort newest first by date string
+    return list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [stockInHistory, deliveryChallansHistory, products]);
+
+  const filteredMovements = React.useMemo(() => {
+    const q = historySearch.trim().toLowerCase();
+    return productStockMovements.filter((m) => {
+      if (historyProdId && m.productId !== Number(historyProdId)) return false;
+      if (historyTypeFilter !== 'all' && m.kind !== historyTypeFilter) return false;
+      const d = (m.date || '').slice(0, 10);
+      if (historyDateFrom && d < historyDateFrom) return false;
+      if (historyDateTo && d > historyDateTo) return false;
+      if (q) {
+        const match =
+          m.productName.toLowerCase().includes(q) ||
+          m.productCode.toLowerCase().includes(q) ||
+          m.refDisplay.toLowerCase().includes(q) ||
+          m.partyName.toLowerCase().includes(q) ||
+          m.note.toLowerCase().includes(q) ||
+          m.userBy.toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [productStockMovements, historyProdId, historyTypeFilter, historyDateFrom, historyDateTo, historySearch]);
+
   // Pending challans: all invoices with delivery status
   const pendingInvoices = invoices.filter((inv) => {
     const q = searchQuery.toLowerCase().trim();
-    const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
     const matchesSearch =
       !q ||
       String(inv.no).includes(q) ||
@@ -487,8 +833,19 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
 
         {feedbackMsg && (
           <span className="text-emerald-700 bg-emerald-50 px-3 py-1 rounded border border-emerald-300 font-semibold flex items-center gap-1.5 shadow-2xs">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> {feedbackMsg}
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> {feedbackMsg}
           </span>
+        )}
+        {actionErrorMsg && (
+          <div className="w-full text-rose-800 bg-rose-50 px-3 py-2 rounded border border-rose-300 font-semibold flex items-center justify-between gap-2 shadow-2xs">
+            <div className="flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{actionErrorMsg}</span>
+            </div>
+            <button onClick={() => setActionErrorMsg('')} className="text-rose-600 hover:text-rose-900 cursor-pointer shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
 
         {/* Sub Navigation Buttons */}
@@ -502,7 +859,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            পেন্ডিং চালান ও ডেলিভারি ({invoices.filter((i) => StorageService.getInvoiceDeliveryStatus(i.no).status !== 'delivered').length})
+            পেন্ডিং চালান ({invoices.filter((i) => StorageService.getInvoiceDeliveryStatus(i.no).status !== 'delivered').length})
           </button>
           <button
             onClick={() => setSubTab('stock_in')}
@@ -513,7 +870,18 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
             }`}
           >
             <ArrowDownToLine className="w-3.5 h-3.5" />
-            স্টক ইন (Vendor Purchase)
+            স্টক ইন (Purchase)
+          </button>
+          <button
+            onClick={() => setSubTab('stock_out')}
+            className={`px-3 py-1.5 rounded font-bold cursor-pointer transition flex items-center gap-1.5 ${
+              subTab === 'stock_out'
+                ? 'bg-amber-700 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+            }`}
+          >
+            <ArrowUpFromLine className="w-3.5 h-3.5" />
+            ম্যানুয়াল স্টক আউট
           </button>
           <button
             onClick={() => setSubTab('overview')}
@@ -524,7 +892,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
             }`}
           >
             <Package className="w-3.5 h-3.5" />
-            বর্তমান স্টক খতিয়ান (Stock Overview)
+            স্টক খতিয়ান
           </button>
           <button
             onClick={() => setSubTab('challan_history')}
@@ -535,7 +903,18 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            ডেলিভারি চালান ইতিহাস ({deliveryChallansHistory.length})
+            ডেলিভারি / আউট ইতিহাস ({deliveryChallansHistory.length})
+          </button>
+          <button
+            onClick={() => setSubTab('product_history')}
+            className={`px-3 py-1.5 rounded font-bold cursor-pointer transition flex items-center gap-1.5 ${
+              subTab === 'product_history'
+                ? 'bg-purple-800 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            স্টক প্রোডাক্ট হিস্টরি
           </button>
         </div>
       </div>
@@ -581,6 +960,25 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                 {pendingInvoices.map((inv) => {
                   const statusObj = StorageService.getInvoiceDeliveryStatus(inv.no);
                   const isDelivered = statusObj.isFullyDelivered;
+                  const remItems = statusObj.itemStatuses.filter(
+                    (it) => it.remainingBox > 0 || it.remainingPiece > 0
+                  );
+                  let inStockReadyCount = 0;
+                  let noStockCount = 0;
+                  let partialStockCount = 0;
+                  remItems.forEach((it) => {
+                    const prod = products.find((p) => p.id === it.productId);
+                    const disp = StorageService.computeDispatchableForRemaining(
+                      prod,
+                      it.remainingBox,
+                      it.remainingPiece,
+                      it.remainingSft
+                    );
+                    if (!disp.hasAnyStock) noStockCount++;
+                    else if (disp.isPartialByStock) partialStockCount++;
+                    else inStockReadyCount++;
+                  });
+
                   return (
                     <tr
                       key={inv.no}
@@ -605,7 +1003,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                           <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="p-2 text-center">
+                      <td className="p-2 text-center space-y-1">
                         {isDelivered ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             <CheckCircle2 className="w-3 h-3" /> ডেলিভারি সম্পন্ন ({statusObj.dispatchesCount} বার)
@@ -618,6 +1016,23 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
                             পেন্ডিং (অপেক্ষমাণ)
                           </span>
+                        )}
+                        {!isDelivered && remItems.length > 0 && (
+                          <div>
+                            {noStockCount === remItems.length ? (
+                              <span className="inline-block text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                স্টকে নেই ({noStockCount} পণ্য পেন্ডিং থাকবে)
+                              </span>
+                            ) : noStockCount > 0 || partialStockCount > 0 ? (
+                              <span className="inline-block text-[9px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                আংশিক স্টক ({noStockCount + partialStockCount} পণ্য অসম্পূর্ণ)
+                              </span>
+                            ) : (
+                              <span className="inline-block text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                সব পণ্য স্টকে আছে ({inStockReadyCount})
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="p-2 text-right font-mono text-[11px]">
@@ -984,6 +1399,239 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
         </div>
       )}
 
+      {/* ================= SUB-TAB 2.5: MANUAL STOCK OUT (WITHOUT INVOICE) ================= */}
+      {subTab === 'stock_out' && (
+        <div className="space-y-4">
+          <div className="bg-white border border-amber-300 rounded-lg p-5 shadow-2xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-200">
+              <div className="flex items-center gap-2">
+                <ArrowUpFromLine className="w-4 h-4 text-amber-700" />
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    ম্যানুয়াল স্টক আউট (চালান / ইনভয়েস ছাড়া সরাসরি স্টক আউট)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    ইনভয়েস চালান ছাড়া ম্যানুয়াল নম্বর দিয়ে সরাসরি গোডাউন থেকে স্টক মাইনাস করুন (হিস্টরিতে ম্যানুয়াল নম্বর ও তারিখ সংরক্ষিত থাকবে)।
+                  </p>
+                </div>
+              </div>
+              {!canDispatch && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-rose-100 text-rose-800 font-bold text-[11px]">
+                  <Lock className="w-3.5 h-3.5" /> পারমিশন বন্ধ আছে
+                </span>
+              )}
+            </div>
+
+            {manualOutError && (
+              <div className="bg-rose-50 border border-rose-300 text-rose-800 px-3 py-2 rounded flex items-center justify-between gap-2 font-semibold">
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{manualOutError}</span>
+                </div>
+                <button onClick={() => setManualOutError('')} className="text-rose-600 hover:text-rose-900 cursor-pointer">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-amber-50/40 p-3 rounded-lg border border-amber-200">
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">ম্যানুয়াল নম্বর / স্লিপ নং : *</label>
+                <input
+                  type="text"
+                  value={manualRefInput}
+                  onChange={(e) => setManualRefInput(e.target.value)}
+                  placeholder="যেমন: M-101 বা 505"
+                  className="w-full bg-white border border-amber-400 rounded px-2.5 py-1.5 font-mono font-bold text-slate-900 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">স্টক আউট তারিখ : *</label>
+                <input
+                  type="date"
+                  value={manualOutDate}
+                  onChange={(e) => setManualOutDate(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 font-mono text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">গ্রহীতা / কারণ (Recipient) :</label>
+                <input
+                  type="text"
+                  value={manualOutRecipient}
+                  onChange={(e) => setManualOutRecipient(e.target.value)}
+                  placeholder="যেমন: স্যাম্পল / ড্যামেজ / গ্রাহকের নাম"
+                  className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">মন্তব্য / নোট (Note) :</label>
+                <input
+                  type="text"
+                  value={manualOutNote}
+                  onChange={(e) => setManualOutNote(e.target.value)}
+                  placeholder="অতিরিক্ত বিবরণ বা নোট..."
+                  className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900"
+                />
+              </div>
+            </div>
+
+            {/* Product Add Row for Manual Stock Out */}
+            <div className="bg-slate-50 border border-slate-300 rounded-lg p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-slate-800 text-xs">স্টক আউট পণ্য নির্বাচন করুন:</span>
+                {selectedManualOutProd && (() => {
+                  const av = StorageService.getAvailableProductStock(selectedManualOutProd);
+                  return (
+                    <span
+                      className={`px-2.5 py-0.5 rounded font-mono font-bold text-[11px] border ${
+                        av.hasStock
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : 'bg-rose-50 text-rose-800 border-rose-300'
+                      }`}
+                    >
+                      বর্তমান স্টক: {av.stockBox} Box, {av.stockPiece} Pcs ({av.stockSft.toFixed(2)} SFT)
+                    </span>
+                  );
+                })()}
+              </div>
+
+              <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="col-span-12 sm:col-span-5">
+                  <label className="block text-slate-600 mb-0.5">পণ্য (Product) :</label>
+                  <ProductSearchSelect
+                    products={products}
+                    selectedProductId={outProdId}
+                    onSelectProduct={(p) => handleSelectManualOutProduct(p ? String(p.id) : '')}
+                    addedProductIds={manualOutItems.map((it) => it.productId)}
+                    placeholder="পণ্য কোড বা নাম লিখুন..."
+                  />
+                </div>
+
+                <div className="col-span-4 sm:col-span-2">
+                  <label className="block text-slate-600 mb-0.5 text-center">বক্স (Box)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={outBox}
+                    onChange={(e) => {
+                      setOutBox(e.target.value);
+                      if (selectedManualOutProd) {
+                        calcManualOutSft(selectedManualOutProd, parseNum(e.target.value), parseNum(outPiece));
+                      }
+                    }}
+                    placeholder="0"
+                    className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-center font-mono font-bold"
+                  />
+                </div>
+
+                <div className="col-span-4 sm:col-span-2">
+                  <label className="block text-slate-600 mb-0.5 text-center">পিস (Piece)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={outPiece}
+                    onChange={(e) => {
+                      setOutPiece(e.target.value);
+                      if (selectedManualOutProd) {
+                        calcManualOutSft(selectedManualOutProd, parseNum(outBox), parseNum(e.target.value));
+                      }
+                    }}
+                    placeholder="0"
+                    className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-center font-mono font-bold"
+                  />
+                </div>
+
+                <div className="col-span-4 sm:col-span-2">
+                  <label className="block text-slate-600 mb-0.5 text-center">SFT</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={outSft || '0.00'}
+                    className="w-full bg-slate-200 border border-slate-300 rounded px-2 py-1 text-center font-mono font-semibold text-slate-800"
+                  />
+                </div>
+
+                <div className="col-span-12 sm:col-span-1">
+                  <button
+                    type="button"
+                    onClick={handleAddManualOutItem}
+                    className="w-full bg-amber-700 hover:bg-amber-600 text-white rounded py-1 font-bold cursor-pointer transition shadow-xs flex items-center justify-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Added Manual Stock Out Items Table */}
+            <div className="border border-slate-300 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[540px] text-xs text-left border-collapse">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                    <tr>
+                      <th className="p-2 text-center w-10">SL</th>
+                      <th className="p-2">পণ্যের নাম</th>
+                      <th className="p-2 text-center w-24">মাপ (Dim)</th>
+                      <th className="p-2 text-center w-20">Box</th>
+                      <th className="p-2 text-center w-20">Piece</th>
+                      <th className="p-2 text-right w-24">SFT</th>
+                      <th className="p-2 text-center w-14">মুছুন</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {manualOutItems.map((it, idx) => (
+                      <tr key={it.productId} className="hover:bg-slate-50">
+                        <td className="p-2 text-center font-mono text-slate-500">{idx + 1}</td>
+                        <td className="p-2 font-bold text-slate-900">{it.name}</td>
+                        <td className="p-2 text-center font-mono text-[11px]">{it.dim}</td>
+                        <td className="p-2 text-center font-mono font-bold text-rose-800">{formatQty(it.box)}</td>
+                        <td className="p-2 text-center font-mono font-bold text-rose-800">{formatQty(it.piece)}</td>
+                        <td className="p-2 text-right font-mono font-semibold">
+                          {(it.isTile ? it.sft : it.piece).toFixed(2)}
+                        </td>
+                        <td className="p-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setManualOutItems(manualOutItems.filter((_, i) => i !== idx))}
+                            className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {manualOutItems.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="p-6 text-center text-slate-400">
+                          উপরে পণ্য ও পরিমাণ নির্বাচন করে 'Add' বাটনে চাপুন
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveManualStockOut}
+                disabled={!canDispatch}
+                className="px-6 py-2.5 bg-amber-700 hover:bg-amber-600 disabled:opacity-40 text-white rounded font-bold cursor-pointer transition shadow-md flex items-center gap-2 text-xs"
+              >
+                <MinusCircle className="w-4 h-4" />
+                ম্যানুয়াল স্টক আউট নিশ্চিত করুন (Save &amp; Stock Out)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ================= SUB-TAB 3: STOCK OVERVIEW ================= */}
       {subTab === 'overview' && (
         <div className="bg-white border border-slate-300 rounded-lg shadow-2xs overflow-hidden p-4 space-y-3">
@@ -998,11 +1646,11 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
           </div>
 
           <div className="overflow-x-auto max-h-[520px]">
-            <table className="w-full min-w-[700px] text-xs text-left border-collapse">
+            <table className="w-full min-w-[760px] text-xs text-left border-collapse">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
                 <tr>
                   <th className="p-2 text-center w-16">PID</th>
-                  <th className="p-2">Product Code & Name</th>
+                  <th className="p-2">Product Code &amp; Name</th>
                   <th className="p-2">Category</th>
                   <th className="p-2 text-center w-20">মাপ (Dim)</th>
                   <th className="p-2 text-center w-24">বর্তমান স্টক (Box)</th>
@@ -1010,6 +1658,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                   <th className="p-2 text-right w-24">মোট স্টক SFT</th>
                   <th className="p-2 text-right w-24">বিক্রয় মূল্য</th>
                   <th className="p-2 text-center w-28">স্টক স্ট্যাটাস</th>
+                  <th className="p-2 text-center w-20">হিস্টরি</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1050,6 +1699,20 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                           </span>
                         )}
                       </td>
+                      <td className="p-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHistoryProdId(String(p.id));
+                            setHistoryTypeFilter('all');
+                            setSubTab('product_history');
+                          }}
+                          className="px-2 py-1 bg-purple-50 hover:bg-purple-700 text-purple-800 hover:text-white border border-purple-300 rounded font-bold text-[10px] cursor-pointer transition inline-flex items-center gap-1"
+                        >
+                          <History className="w-3 h-3" />
+                          হিস্টরি
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -1059,16 +1722,16 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
         </div>
       )}
 
-      {/* ================= SUB-TAB 4: DELIVERY CHALLANS HISTORY ================= */}
+      {/* ================= SUB-TAB 4: DELIVERY CHALLANS & MANUAL STOCK OUT HISTORY ================= */}
       {subTab === 'challan_history' && (
         <div className="bg-white border border-slate-300 rounded-lg shadow-2xs overflow-hidden p-4 space-y-3">
           <div className="flex justify-between items-center pb-2 border-b border-slate-200">
             <h3 className="font-bold text-sm text-slate-800 flex items-center gap-1.5">
               <FileText className="w-4 h-4 text-indigo-700" />
-              ডেলিভারি চালান ও ট্রিপ ইতিহাস (Dispatched Challans Log)
+              ডেলিভারি চালান ও ম্যানুয়াল স্টক আউট ইতিহাস (Dispatched &amp; Stock Out Log)
             </h3>
             <span className="text-slate-500 font-semibold">
-              মোট চালান: {deliveryChallansHistory.length} টি
+              মোট এন্ট্রি: {deliveryChallansHistory.length} টি
             </span>
           </div>
 
@@ -1076,18 +1739,19 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
             <table className="w-full min-w-[720px] text-xs text-left border-collapse">
               <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
                 <tr>
-                  <th className="p-2 text-center w-28">Challan No</th>
-                  <th className="p-2 text-center w-20">Invoice</th>
+                  <th className="p-2 text-center w-28">Challan / Ref</th>
+                  <th className="p-2 text-center w-24">ধরন / Invoice</th>
                   <th className="p-2 w-32">তারিখ</th>
-                  <th className="p-2">গ্রাহকের নাম ও ঠিকানা</th>
-                  <th className="p-2">Cust. Deal</th>
-                  <th className="p-2">গাড়ি ও ড্রাইভার</th>
-                  <th className="p-2 text-right w-28">ডেলিভারি পরিমাণ</th>
+                  <th className="p-2">গ্রাহক / বিবরণ</th>
+                  <th className="p-2">Cust. Deal / নোট</th>
+                  <th className="p-2">মাধ্যম / ড্রাইভার</th>
+                  <th className="p-2 text-right w-28">স্টক আউট পরিমাণ</th>
                   <th className="p-2 text-center w-28">প্রিন্ট ও অ্যাকশন</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {deliveryChallansHistory.map((ch) => {
+                  const isManual = ch.outType === 'manual' || ch.invoiceNo === 0;
                   const totBox = ch.items.reduce((s, it) => s + (it.box || 0), 0);
                   const totPc = ch.items.reduce((s, it) => s + (it.piece || 0), 0);
                   const totSft = ch.items.reduce((s, it) => s + (it.sft || 0), 0);
@@ -1095,20 +1759,26 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                   return (
                     <tr key={ch.id} className="hover:bg-slate-50 transition">
                       <td className="p-2 text-center font-mono font-bold text-emerald-900">
-                        {ch.challanNo}
+                        {isManual ? ch.manualRefNo || ch.challanNo : ch.challanNo}
                       </td>
                       <td className="p-2 text-center font-mono font-bold text-slate-700">
-                        #{ch.invoiceNo}
+                        {isManual ? (
+                          <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 text-[10px]">
+                            ম্যানুয়াল আউট
+                          </span>
+                        ) : (
+                          <span>#{ch.invoiceNo}</span>
+                        )}
                       </td>
                       <td className="p-2 font-mono text-slate-600">{ch.date?.slice(0, 16)}</td>
                       <td className="p-2">
                         <div className="font-bold text-slate-900">{ch.custName}</div>
                         <div className="text-[11px] text-slate-500 truncate max-w-xs">{ch.address || ch.phone || '—'}</div>
                       </td>
-                      <td className="p-2 font-medium text-slate-700">{ch.deal || '—'}</td>
+                      <td className="p-2 font-medium text-slate-700">{ch.deal || ch.note || '—'}</td>
                       <td className="p-2 text-slate-700">
                         <div>{ch.vehicleNo || '—'}</div>
-                        <div className="text-[11px] text-slate-500">{ch.driverName}</div>
+                        <div className="text-[11px] text-slate-500">{ch.driverName && ch.driverName !== '—' ? ch.driverName : ch.dispatchedBy}</div>
                       </td>
                       <td className="p-2 text-right font-mono font-bold text-emerald-800">
                         {totBox} Box, {totPc} Pcs <br />
@@ -1127,13 +1797,13 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                             className="px-2.5 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded font-bold cursor-pointer transition shadow-xs inline-flex items-center gap-1 text-[11px]"
                           >
                             <Printer className="w-3 h-3" />
-                            চালান
+                            {isManual ? 'স্লিপ' : 'চালান'}
                           </button>
                           <button
                             onClick={() => handleDeleteDeliveryHistoryClick(ch)}
                             title={
                               canDeleteDeliveryHistory
-                                ? 'ডেলিভারি চালান ইতিহাস ডিলিট করুন'
+                                ? 'ডেলিভারি / স্টক আউট ইতিহাস ডিলিট করুন'
                                 : 'ডিলিট করতে এডমিন অনুমতি বা পাসওয়ার্ড প্রয়োজন'
                             }
                             className={`p-1 rounded border cursor-pointer transition ${
@@ -1152,7 +1822,231 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                 {deliveryChallansHistory.length === 0 && (
                   <tr>
                     <td colSpan={8} className="p-8 text-center text-slate-400">
-                      কোনো ডেলিভারি চালান ইতিহাস নেই
+                      কোনো ডেলিভারি চালান বা স্টক আউট ইতিহাস নেই
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ================= SUB-TAB 5: STOCK PRODUCT HISTORY (IN / CHALLAN OUT / MANUAL OUT) ================= */}
+      {subTab === 'product_history' && (
+        <div className="bg-white border border-slate-300 rounded-lg shadow-2xs overflow-hidden p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-slate-200">
+            <div>
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <History className="w-4 h-4 text-purple-700" />
+                স্টক প্রোডাক্ট হিস্টরি (Product Stock In / Challan Out / Manual Out History)
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                প্রতিটি পণ্যের স্টক ইন এবং কোন চালান বা ম্যানুয়াল নম্বর দিয়ে আউট করা হয়েছে তা তারিখসহ দেখুন।
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const selProd = products.find((p) => p.id === Number(historyProdId));
+                onOpenPrintModal({
+                  isOpen: true,
+                  type: 'report',
+                  reportData: {
+                    title: selProd
+                      ? `স্টক প্রোডাক্ট হিস্টরি — ${selProd.name}`
+                      : 'স্টক প্রোডাক্ট হিস্টরি (সকল পণ্য)',
+                    period:
+                      historyDateFrom || historyDateTo
+                        ? `তারিখ: ${historyDateFrom || 'শুরু'} থেকে ${historyDateTo || 'আজ'}`
+                        : 'সকল তারিখের রেকর্ড',
+                    blocks: [
+                      {
+                        caption: `মোট মুভমেন্ট: ${filteredMovements.length} টি`,
+                        heads: ['তারিখ', 'ধরন', 'চালান / ম্যানুয়াল নম্বর', 'পণ্যের নাম', 'ভেন্ডর / গ্রাহক', 'Box / Pcs', 'SFT'],
+                        rows: filteredMovements.map((m) => [
+                          m.date?.slice(0, 16) || '—',
+                          m.sourceLabel,
+                          m.refDisplay,
+                          m.productName,
+                          m.partyName,
+                          `${m.kind === 'in' ? '+' : '-'}${m.box}B / ${m.piece}P`,
+                          `${m.kind === 'in' ? '+' : '-'}${m.sft.toFixed(2)}`,
+                        ]),
+                      },
+                    ],
+                  },
+                });
+              }}
+              className="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded font-bold cursor-pointer transition flex items-center gap-1.5 text-xs shadow-xs"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              হিস্টরি প্রিন্ট করুন
+            </button>
+          </div>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200 items-end">
+            <div className="lg:col-span-4">
+              <label className="block text-slate-700 font-semibold mb-1 flex items-center justify-between">
+                <span>পণ্য অনুযায়ী ফিল্টার:</span>
+                {historyProdId && (
+                  <button
+                    type="button"
+                    onClick={() => setHistoryProdId('')}
+                    className="text-[10px] text-purple-700 hover:underline font-bold cursor-pointer"
+                  >
+                    × সকল পণ্য দেখুন
+                  </button>
+                )}
+              </label>
+              <ProductSearchSelect
+                products={products}
+                selectedProductId={historyProdId}
+                onSelectProduct={(p) => setHistoryProdId(p ? String(p.id) : '')}
+                placeholder="নির্দিষ্ট পণ্য বাছুন বা খালি রাখুন..."
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">ধরন (Type):</label>
+              <select
+                value={historyTypeFilter}
+                onChange={(e) => setHistoryTypeFilter(e.target.value as any)}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-slate-900 font-semibold"
+              >
+                <option value="all">সকল (In &amp; Out)</option>
+                <option value="in">স্টক ইন (+)</option>
+                <option value="challan_out">চালান আউট (-)</option>
+                <option value="manual_out">ম্যানুয়াল আউট (-)</option>
+              </select>
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">From তারিখ:</label>
+              <input
+                type="date"
+                value={historyDateFrom}
+                onChange={(e) => setHistoryDateFrom(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-mono text-slate-800"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">To তারিখ:</label>
+              <input
+                type="date"
+                value={historyDateTo}
+                onChange={(e) => setHistoryDateTo(e.target.value)}
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1 font-mono text-slate-800"
+              />
+            </div>
+
+            <div className="lg:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">নম্বর / নাম খুঁজুন:</label>
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="চালান / ম্যানুয়াল নং..."
+                className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-slate-800"
+              />
+            </div>
+          </div>
+
+          {/* Selected Product Live Stock Summary Card */}
+          {(() => {
+            const selProd = products.find((p) => p.id === Number(historyProdId));
+            const totalInBox = filteredMovements.filter((m) => m.kind === 'in').reduce((s, m) => s + m.box, 0);
+            const totalInPcs = filteredMovements.filter((m) => m.kind === 'in').reduce((s, m) => s + m.piece, 0);
+            const totalOutBox = filteredMovements.filter((m) => m.kind !== 'in').reduce((s, m) => s + m.box, 0);
+            const totalOutPcs = filteredMovements.filter((m) => m.kind !== 'in').reduce((s, m) => s + m.piece, 0);
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <div className="bg-cyan-50 border border-cyan-200 rounded p-2.5 flex items-center justify-between">
+                  <span className="font-semibold text-cyan-900">মোট স্টক ইন (+):</span>
+                  <span className="font-mono font-bold text-cyan-900">
+                    +{totalInBox} Box, +{totalInPcs} Pcs
+                  </span>
+                </div>
+                <div className="bg-rose-50 border border-rose-200 rounded p-2.5 flex items-center justify-between">
+                  <span className="font-semibold text-rose-900">মোট স্টক আউট (চালান/ম্যানুয়াল -):</span>
+                  <span className="font-mono font-bold text-rose-900">
+                    -{totalOutBox} Box, -{totalOutPcs} Pcs
+                  </span>
+                </div>
+                <div className="bg-emerald-50 border border-emerald-200 rounded p-2.5 flex items-center justify-between">
+                  <span className="font-semibold text-emerald-900">
+                    {selProd ? 'নির্বাচিত পণ্যের বর্তমান স্টক:' : 'মোট হিস্টরি রেকর্ড:'}
+                  </span>
+                  <span className="font-mono font-bold text-emerald-900">
+                    {selProd
+                      ? `${selProd.stockBox || 0} Box, ${selProd.stockPiece || 0} Pcs (${(selProd.stockSft || 0).toFixed(2)} Sft)`
+                      : `${filteredMovements.length} টি`}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* History Table */}
+          <div className="overflow-x-auto max-h-[500px]">
+            <table className="w-full min-w-[780px] text-xs text-left border-collapse">
+              <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 sticky top-0">
+                <tr>
+                  <th className="p-2 w-32">তারিখ ও সময়</th>
+                  <th className="p-2 text-center w-32">ধরন</th>
+                  <th className="p-2 w-52">চালান / ম্যানুয়াল নম্বর (Ref)</th>
+                  <th className="p-2">পণ্যের বিবরণ</th>
+                  <th className="p-2">ভেন্ডর / গ্রাহক / নোট</th>
+                  <th className="p-2 text-right w-28">পরিমাণ (Box / Pcs)</th>
+                  <th className="p-2 text-right w-20">SFT</th>
+                  <th className="p-2 w-24">ইউজার</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredMovements.map((m) => (
+                  <tr key={m.uid} className="hover:bg-slate-50 transition">
+                    <td className="p-2 font-mono text-slate-600">{m.date?.slice(0, 16) || '—'}</td>
+                    <td className="p-2 text-center">
+                      {m.kind === 'in' ? (
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-900 border border-cyan-300">
+                          স্টক ইন (+)
+                        </span>
+                      ) : m.kind === 'manual_out' ? (
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                          ম্যানুয়াল আউট (-)
+                        </span>
+                      ) : (
+                        <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300">
+                          চালান আউট (-)
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-2 font-mono font-bold text-slate-900">{m.refDisplay}</td>
+                    <td className="p-2 font-bold text-slate-900">{m.productName}</td>
+                    <td className="p-2">
+                      <div className="font-semibold text-slate-800">{m.partyName}</div>
+                      {m.note && <div className="text-[10px] text-slate-500">{m.note}</div>}
+                    </td>
+                    <td
+                      className={`p-2 text-right font-mono font-bold ${
+                        m.kind === 'in' ? 'text-cyan-800' : 'text-rose-700'
+                      }`}
+                    >
+                      {m.kind === 'in' ? '+' : '-'}
+                      {formatQty(m.box)}B / {formatQty(m.piece)}P
+                    </td>
+                    <td className="p-2 text-right font-mono font-semibold text-slate-700">
+                      {m.sft > 0 ? `${m.kind === 'in' ? '+' : '-'}${m.sft.toFixed(2)}` : '—'}
+                    </td>
+                    <td className="p-2 text-slate-600">{m.userBy}</td>
+                  </tr>
+                ))}
+                {filteredMovements.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-slate-400">
+                      নির্বাচিত ফিল্টারে কোনো স্টক মুভমেন্ট হিস্টরি পাওয়া যায়নি
                     </td>
                   </tr>
                 )}
@@ -1203,39 +2097,71 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                 </div>
               </div>
 
+              {modalErrorMsg && (
+                <div className="bg-rose-50 border border-rose-300 text-rose-800 px-3 py-2 rounded flex items-center justify-between gap-2 text-xs font-semibold">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{modalErrorMsg}</span>
+                  </div>
+                  <button onClick={() => setModalErrorMsg('')} className="text-rose-600 hover:text-rose-900 cursor-pointer shrink-0">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Delivery Items Input Table */}
               <div className="border border-slate-300 rounded-lg overflow-hidden">
-                <div className="p-2 bg-slate-100 border-b border-slate-300 font-bold text-slate-800 text-xs">
-                  পণ্যভিত্তিক ডেলিভারি পরিমাণ নির্ধারণ করুন (আজকের ট্রিপে কতটুকু মাল দিচ্ছেন):
+                <div className="p-2 bg-slate-100 border-b border-slate-300 font-bold text-slate-800 text-xs flex flex-wrap items-center justify-between gap-2">
+                  <span>পণ্যভিত্তিক ডেলিভারি পরিমাণ নির্ধারণ করুন (শুধুমাত্র স্টকে থাকা পণ্য স্টক-মাইনাস হবে, বাকি পেন্ডিং থাকবে):</span>
                 </div>
                 <table className="w-full text-xs text-left border-collapse">
                   <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-300">
                     <tr>
                       <th className="p-2">পণ্যের নাম</th>
-                      <th className="p-2 text-center w-24">অর্ডারকৃত</th>
-                      <th className="p-2 text-center w-24">ইতিপূর্বে ডেলিভারি</th>
-                      <th className="p-2 text-center w-24 text-rose-700">বাকি আছে</th>
-                      <th className="p-2 text-center w-28 bg-emerald-50 text-emerald-900">বর্তমান ট্রিপে (Box)</th>
-                      <th className="p-2 text-center w-28 bg-emerald-50 text-emerald-900">বর্তমান ট্রিপে (Pcs)</th>
+                      <th className="p-2 text-center w-24">অর্ডার / ডেলিভারি</th>
+                      <th className="p-2 text-center w-20 text-rose-700">বাকি আছে</th>
+                      <th className="p-2 text-center w-24 text-cyan-900 bg-cyan-50">বর্তমান স্টক</th>
+                      <th className="p-2 text-center w-24 bg-emerald-50 text-emerald-900">ট্রিপে (Box)</th>
+                      <th className="p-2 text-center w-24 bg-emerald-50 text-emerald-900">ট্রিপে (Pcs)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {StorageService.getInvoiceDeliveryStatus(deliveryModalInvoice.no).itemStatuses.map((it) => {
                       const inp = deliveryDispatchInputs[it.productId] || { box: '0', piece: '0', sft: '0' };
+                      const prod = products.find((p) => p.id === it.productId);
+                      const avail = StorageService.getAvailableProductStock(prod);
                       return (
-                        <tr key={it.productId} className="hover:bg-slate-50">
+                        <tr
+                          key={it.productId}
+                          className={`hover:bg-slate-50 ${!avail.hasStock && (it.remainingBox > 0 || it.remainingPiece > 0) ? 'bg-rose-50/40' : ''}`}
+                        >
                           <td className="p-2 font-medium text-slate-900">
                             {it.name}
                             <span className="block text-[10px] text-slate-500 font-mono">{it.dim}</span>
+                            {!avail.hasStock && (it.remainingBox > 0 || it.remainingPiece > 0) && (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 text-[9px] font-bold">
+                                স্টকে নেই — পেন্ডিং এ থাকবে
+                              </span>
+                            )}
                           </td>
-                          <td className="p-2 text-center font-mono">{it.orderedBox}B / {it.orderedPiece}P</td>
-                          <td className="p-2 text-center font-mono text-emerald-800">{it.deliveredBox}B / {it.deliveredPiece}P</td>
+                          <td className="p-2 text-center font-mono text-[11px]">
+                            <div>অর্ডার: {it.orderedBox}B/{it.orderedPiece}P</div>
+                            <div className="text-emerald-700">গিয়েছে: {it.deliveredBox}B/{it.deliveredPiece}P</div>
+                          </td>
                           <td className="p-2 text-center font-mono font-bold text-rose-700">{it.remainingBox}B / {it.remainingPiece}P</td>
+                          <td className="p-2 text-center font-mono font-bold bg-cyan-50/40">
+                            {avail.hasStock ? (
+                              <span className="text-emerald-800">{avail.stockBox}B / {avail.stockPiece}P</span>
+                            ) : (
+                              <span className="text-rose-700">০ স্টক</span>
+                            )}
+                          </td>
                           <td className="p-2 text-center bg-emerald-50/50">
                             <input
                               type="number"
                               min="0"
                               max={it.remainingBox}
+                              disabled={!avail.hasStock}
                               value={inp.box}
                               onChange={(e) => {
                                 setDeliveryDispatchInputs({
@@ -1243,7 +2169,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                                   [it.productId]: { ...inp, box: e.target.value },
                                 });
                               }}
-                              className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 text-center font-mono font-bold text-emerald-900"
+                              className="w-20 bg-white disabled:bg-slate-100 disabled:text-slate-400 border border-slate-300 rounded px-1.5 py-1 text-center font-mono font-bold text-emerald-900"
                             />
                           </td>
                           <td className="p-2 text-center bg-emerald-50/50">
@@ -1251,6 +2177,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                               type="number"
                               min="0"
                               max={it.remainingPiece}
+                              disabled={!avail.hasStock}
                               value={inp.piece}
                               onChange={(e) => {
                                 setDeliveryDispatchInputs({
@@ -1258,7 +2185,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({
                                   [it.productId]: { ...inp, piece: e.target.value },
                                 });
                               }}
-                              className="w-20 bg-white border border-slate-300 rounded px-1.5 py-1 text-center font-mono font-bold text-emerald-900"
+                              className="w-20 bg-white disabled:bg-slate-100 disabled:text-slate-400 border border-slate-300 rounded px-1.5 py-1 text-center font-mono font-bold text-emerald-900"
                             />
                           </td>
                         </tr>

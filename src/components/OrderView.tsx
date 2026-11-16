@@ -22,6 +22,7 @@ import {
   Send,
   CheckCircle2,
   ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import { ProductSearchSelect } from './ProductSearchSelect';
 
@@ -73,11 +74,13 @@ export const OrderView: React.FC<OrderViewProps> = ({
   const [deal, setDeal] = useState<string>('');
   const [comment, setComment] = useState<string>('');
 
-  // Customer Name & Phone suggestion dropdowns
+  // Customer Name, Phone & Deal suggestion dropdowns
   const [showCustNameSug, setShowCustNameSug] = useState<boolean>(false);
   const [showCustPhoneSug, setShowCustPhoneSug] = useState<boolean>(false);
+  const [showDealSug, setShowDealSug] = useState<boolean>(false);
   const custNameBoxRef = useRef<HTMLDivElement>(null);
   const custPhoneBoxRef = useRef<HTMLDivElement>(null);
+  const dealBoxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -86,6 +89,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
       }
       if (custPhoneBoxRef.current && !custPhoneBoxRef.current.contains(e.target as Node)) {
         setShowCustPhoneSug(false);
+      }
+      if (dealBoxRef.current && !dealBoxRef.current.contains(e.target as Node)) {
+        setShowDealSug(false);
       }
     };
     document.addEventListener('mousedown', handleOutside);
@@ -132,6 +138,27 @@ export const OrderView: React.FC<OrderViewProps> = ({
     }
   }, [dealers]);
 
+  // Combined unique Deal person names from dealers master list, customers, and invoices
+  const allDealSuggestions = useMemo(() => {
+    const map = new Map<string, string>();
+    const pushName = (raw?: string) => {
+      const cleaned = (raw || '').trim();
+      if (!cleaned) return;
+      const key = cleaned.toLowerCase();
+      if (!map.has(key)) map.set(key, cleaned);
+    };
+    dealersList.forEach((d) => pushName(d.name));
+    customers.forEach((c) => pushName(c.deal));
+    invoices.forEach((inv) => pushName(inv.deal));
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [dealersList, customers, invoices]);
+
+  const dealMatches = useMemo(() => {
+    const q = deal.trim().toLowerCase();
+    if (!q) return allDealSuggestions.slice(0, 12);
+    return allDealSuggestions.filter((d) => d.toLowerCase().includes(q)).slice(0, 12);
+  }, [allDealSuggestions, deal]);
+
   // Items in current invoice
   const [lines, setLines] = useState<Item[]>([]);
   const [selectedLineIndex, setSelectedLineIndex] = useState<number>(-1);
@@ -153,8 +180,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
   const [bank, setBank] = useState<string>('');
   const [bkash, setBkash] = useState<string>('');
 
-  // Status message
+  // Status & item warning messages
   const [statusMsg, setStatusMsg] = useState<string>('');
+  const [itemWarningMsg, setItemWarningMsg] = useState<string>('');
 
   // Right-side list state (defaults to current date's memos)
   const [selectedRightInvoice, setSelectedRightInvoice] = useState<Invoice | null>(null);
@@ -227,6 +255,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
     setBank('');
     setBkash('');
     setStatusMsg('');
+    setItemWarningMsg('');
   };
 
   const clearItemEntry = () => {
@@ -238,15 +267,46 @@ export const OrderView: React.FC<OrderViewProps> = ({
     setItemTotal('');
   };
 
+  // Added product IDs & normalized codes for duplicate prevention
+  const addedProductIds = useMemo(() => lines.map((l) => l.productId), [lines]);
+  const addedProductCodes = useMemo(() => {
+    const codes: string[] = [];
+    lines.forEach((l) => {
+      const p = products.find((prod) => prod.id === l.productId);
+      if (p?.code && p.code.trim()) {
+        codes.push(p.code.trim().toLowerCase());
+      }
+    });
+    return codes;
+  }, [lines, products]);
+
+  const isProductAlreadyAdded = (prod: Product): boolean => {
+    if (lines.some((it) => it.productId === prod.id)) return true;
+    const normCode = (prod.code || '').trim().toLowerCase();
+    if (normCode && addedProductCodes.includes(normCode)) return true;
+    return false;
+  };
+
   // Product Selection handler
   const handleProductSelect = (pId: string) => {
-    setSelectedProductId(pId);
+    setItemWarningMsg('');
     const prod = products.find((p) => p.id === Number(pId));
     if (!prod) {
+      setSelectedProductId(pId);
       clearItemEntry();
       return;
     }
 
+    if (isProductAlreadyAdded(prod)) {
+      const label = prod.code ? `[${prod.code}] ${prod.name}` : prod.name;
+      const msg = `"${label}" ইতিমধ্যে এই চালানে যোগ করা আছে — একটি কোড বা পণ্য ডাবল এন্ট্রি করা যাবে না!`;
+      setItemWarningMsg(msg);
+      setStatusMsg(msg);
+      clearItemEntry();
+      return;
+    }
+
+    setSelectedProductId(pId);
     setItemRate(String(prod.price || prod.rate));
     setItemBox('1');
     setItemPiece('0');
@@ -324,15 +384,28 @@ export const OrderView: React.FC<OrderViewProps> = ({
 
   // Add line item
   const handleAddItem = () => {
+    setItemWarningMsg('');
     const prod = products.find((p) => p.id === Number(selectedProductId));
     if (!prod) {
-      setStatusMsg('তালিকা থেকে সঠিক পণ্য বাছুন।');
+      const msg = 'তালিকা থেকে সঠিক পণ্য বাছুন।';
+      setItemWarningMsg(msg);
+      setStatusMsg(msg);
+      return;
+    }
+    if (isProductAlreadyAdded(prod)) {
+      const label = prod.code ? `[${prod.code}] ${prod.name}` : prod.name;
+      const msg = `"${label}" ইতিমধ্যে এই চালানে যোগ করা আছে — একটি কোড বা পণ্য ডাবল এন্ট্রি করা যাবে না!`;
+      setItemWarningMsg(msg);
+      setStatusMsg(msg);
+      clearItemEntry();
       return;
     }
     const b = parseNum(itemBox);
     const pc = parseNum(itemPiece);
     if (b <= 0 && pc <= 0) {
-      setStatusMsg('Box বা Piece দিন।');
+      const msg = 'Box বা Piece দিন।';
+      setItemWarningMsg(msg);
+      setStatusMsg(msg);
       return;
     }
 
@@ -349,6 +422,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
     };
 
     setLines([...lines, newItem]);
+    setStatusMsg('');
     clearItemEntry();
   };
 
@@ -612,8 +686,8 @@ export const OrderView: React.FC<OrderViewProps> = ({
     <div className="flex flex-col lg:flex-row min-h-[calc(100vh-85px)] lg:h-[calc(100vh-85px)] bg-slate-100 lg:overflow-hidden text-xs">
       {/* HTML5 Datalist for Auto-completing Dealer Deals */}
       <datalist id="dealer-deals-datalist">
-        {dealersList.map((d) => (
-          <option key={d.id} value={d.name} />
+        {allDealSuggestions.map((name) => (
+          <option key={name} value={name} />
         ))}
       </datalist>
 
@@ -808,9 +882,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
                 </div>
               </div>
 
-              {/* Cust. Deal with Auto-saved Datalist */}
-              <div className="flex items-center gap-1">
-                <label className="w-24 text-slate-700 font-semibold text-right pr-2 flex items-center justify-end gap-1">
+              {/* Cust. Deal with Auto-saved Suggestions */}
+              <div className="flex items-center gap-1" ref={dealBoxRef}>
+                <label className="w-24 text-slate-700 font-semibold text-right pr-2 flex items-center justify-end gap-1 shrink-0">
                   <Briefcase className="w-3 h-3 text-emerald-600" />
                   Cust. Deal :
                 </label>
@@ -819,10 +893,46 @@ export const OrderView: React.FC<OrderViewProps> = ({
                     type="text"
                     list="dealer-deals-datalist"
                     value={deal}
-                    onChange={(e) => setDeal(e.target.value)}
+                    onFocus={() => setShowDealSug(true)}
+                    onChange={(e) => {
+                      setDeal(e.target.value);
+                      setShowDealSug(true);
+                    }}
                     placeholder="ডিল বাছুন বা নতুন লিখুন"
+                    autoComplete="off"
                     className="w-full bg-white border border-emerald-400/80 rounded px-2 py-1 text-slate-900 font-semibold focus:border-emerald-600 focus:outline-hidden"
                   />
+                  {showDealSug && dealMatches.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-emerald-400 rounded-md shadow-xl z-40 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                      <div className="px-2 py-1 bg-emerald-50 text-[10px] font-bold text-emerald-800 flex items-center justify-between sticky top-0 border-b border-emerald-200">
+                        <span>পূর্বের ডিল সাজেশন ({dealMatches.length})</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowDealSug(false)}
+                          className="text-emerald-700 hover:text-emerald-950 cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      {dealMatches.map((dealName) => (
+                        <button
+                          key={dealName}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setDeal(dealName);
+                            setShowDealSug(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-emerald-50 transition cursor-pointer flex items-center justify-between gap-2"
+                        >
+                          <span className="font-bold text-slate-900 truncate">{dealName}</span>
+                          <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded shrink-0">
+                            Deal
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1041,6 +1151,8 @@ export const OrderView: React.FC<OrderViewProps> = ({
                   products={products}
                   selectedProductId={selectedProductId}
                   onSelectProduct={(p) => handleProductSelect(p ? String(p.id) : '')}
+                  addedProductIds={addedProductIds}
+                  addedProductCodes={addedProductCodes}
                   placeholder="পণ্য কোড বা নাম লিখুন (কিবোর্ড দিয়ে খুঁজুন)..."
                 />
               </div>
@@ -1113,6 +1225,21 @@ export const OrderView: React.FC<OrderViewProps> = ({
                 </button>
               </div>
             </div>
+            {itemWarningMsg && (
+              <div className="mt-2 bg-rose-50 border border-rose-300 text-rose-800 px-2.5 py-1.5 rounded flex items-center justify-between gap-2 text-xs font-semibold">
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{itemWarningMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setItemWarningMsg('')}
+                  className="text-rose-600 hover:text-rose-900 cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Line Items Table */}
@@ -1559,14 +1686,14 @@ export const OrderView: React.FC<OrderViewProps> = ({
               <div>
                 <label className="block text-slate-600 font-semibold mb-1">সংরক্ষিত ডিলসমূহ থেকে বাছুন:</label>
                 <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1 bg-slate-50 rounded border border-slate-200">
-                  {dealersList.map((d) => (
+                  {allDealSuggestions.map((dealName) => (
                     <button
-                      key={d.id}
+                      key={dealName}
                       type="button"
-                      onClick={() => setNewDealInput(d.name)}
+                      onClick={() => setNewDealInput(dealName)}
                       className="px-2 py-1 bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-400 rounded text-[11px] text-slate-800 font-medium cursor-pointer transition"
                     >
-                      {d.name}
+                      {dealName}
                     </button>
                   ))}
                 </div>

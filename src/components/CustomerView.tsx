@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Customer, Invoice } from '../types';
+import { Customer, DealerDeal, Invoice } from '../types';
 import { StorageService } from '../services/storage';
+import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatMoney, parseNum } from '../utils/numberWords';
-import { Users, Search, Plus, Save, Trash2, ShoppingBag, X, Phone, MapPin, AlertCircle } from 'lucide-react';
+import { Users, Search, Plus, Save, Trash2, ShoppingBag, X, Phone, MapPin, AlertCircle, Briefcase } from 'lucide-react';
 
 interface CustomerViewProps {
   customers: Customer[];
   invoices: Invoice[];
+  dealers?: DealerDeal[];
   onSaveCustomer: (cust: Customer) => void;
   onDeleteCustomer: (id: number) => void;
   isPickMode?: boolean;
@@ -19,6 +21,7 @@ interface CustomerViewProps {
 export const CustomerView: React.FC<CustomerViewProps> = ({
   customers,
   invoices,
+  dealers,
   onSaveCustomer,
   onDeleteCustomer,
   isPickMode = false,
@@ -39,8 +42,10 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
   // Suggestion dropdown states
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+  const [showDealSuggestions, setShowDealSuggestions] = useState(false);
   const nameFieldRef = useRef<HTMLDivElement>(null);
   const phoneFieldRef = useRef<HTMLDivElement>(null);
+  const dealFieldRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -49,6 +54,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
       }
       if (phoneFieldRef.current && !phoneFieldRef.current.contains(e.target as Node)) {
         setShowPhoneSuggestions(false);
+      }
+      if (dealFieldRef.current && !dealFieldRef.current.contains(e.target as Node)) {
+        setShowDealSuggestions(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -92,6 +100,27 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
       .slice(0, 8);
   }, [customers, phone, name, selectedCust]);
 
+  // All prior Deal person names (from dealers master, existing customers, and past invoices)
+  const allDealSuggestions = useMemo(() => {
+    const map = new Map<string, string>();
+    const addName = (raw?: string) => {
+      const trimmed = (raw || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (!map.has(key)) map.set(key, trimmed);
+    };
+    (dealers || StorageService.getDealers()).forEach((d) => addName(d.name));
+    customers.forEach((c) => addName(c.deal));
+    invoices.forEach((inv) => addName(inv.deal));
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [dealers, customers, invoices]);
+
+  const dealMatches = useMemo(() => {
+    const q = deal.trim().toLowerCase();
+    if (!q) return allDealSuggestions.slice(0, 15);
+    return allDealSuggestions.filter((d) => d.toLowerCase().includes(q)).slice(0, 12);
+  }, [allDealSuggestions, deal]);
+
   // Product purchase history modal state
   const [showProductHistory, setShowProductHistory] = useState(false);
   const [productFilter, setProductFilter] = useState<string>('all');
@@ -134,12 +163,22 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
       return;
     }
 
+    const trimmedDeal = deal.trim();
+    if (trimmedDeal) {
+      const beforeCount = StorageService.getDealers().length;
+      StorageService.addOrGetDealer(trimmedDeal);
+      const afterDealers = StorageService.getDealers();
+      if (afterDealers.length !== beforeCount) {
+        FirestoreSyncService.syncSaveDealers(afterDealers).catch(console.error);
+      }
+    }
+
     const cust: Customer = {
       id: selectedCust ? selectedCust.id : StorageService.nextCustId(),
       name: name.trim(),
       address: address.trim(),
       phone: phone.trim(),
-      deal: deal.trim(),
+      deal: trimmedDeal,
       openDue: parseNum(openDue),
     };
 
@@ -147,6 +186,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
     setSelectedCust(cust);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
+    setShowDealSuggestions(false);
     setStatusMsg({ text: `গ্রাহক সংরক্ষিত হয়েছে! ID: ${cust.id}`, type: 'success' });
   };
 
@@ -373,15 +413,60 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
             />
           </div>
 
-          <div>
+          <div ref={dealFieldRef} className="relative">
             <label className="block text-slate-700 font-semibold mb-1">Deal / Contact :</label>
+            <datalist id="customer-deals-datalist">
+              {allDealSuggestions.map((dName) => (
+                <option key={dName} value={dName} />
+              ))}
+            </datalist>
             <input
               type="text"
+              list="customer-deals-datalist"
               value={deal}
-              onChange={(e) => setDeal(e.target.value)}
-              placeholder="ডিলার / কন্টাক্টর বিবরণ"
-              className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 text-slate-900"
+              onFocus={() => setShowDealSuggestions(true)}
+              onChange={(e) => {
+                setDeal(e.target.value);
+                setShowDealSuggestions(true);
+              }}
+              placeholder="ডিলার / কন্টাক্টর নাম লিখুন বা বাছুন"
+              autoComplete="off"
+              className="w-full bg-white border border-emerald-400/80 rounded px-2.5 py-1.5 font-semibold text-slate-900 focus:border-emerald-600 focus:outline-hidden"
             />
+            {showDealSuggestions && dealMatches.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-emerald-400 rounded-md shadow-xl z-40 max-h-52 overflow-y-auto divide-y divide-slate-100">
+                <div className="px-2.5 py-1 bg-emerald-50 text-[10px] font-bold text-emerald-800 flex items-center justify-between sticky top-0 border-b border-emerald-200">
+                  <span className="inline-flex items-center gap-1">
+                    <Briefcase className="w-3 h-3" />
+                    পূর্বের ডিল (Deal) সাজেশন ({dealMatches.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDealSuggestions(false)}
+                    className="text-emerald-700 hover:text-emerald-950 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                {dealMatches.map((dName) => (
+                  <button
+                    key={dName}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setDeal(dName);
+                      setShowDealSuggestions(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 hover:bg-emerald-50 transition cursor-pointer flex items-center justify-between gap-2"
+                  >
+                    <span className="font-bold text-slate-900 text-xs truncate">{dName}</span>
+                    <span className="shrink-0 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                      বাছাই
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>

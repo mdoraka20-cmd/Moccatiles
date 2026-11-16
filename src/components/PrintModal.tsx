@@ -22,7 +22,7 @@ interface PrintModalProps {
       total?: string[];
     }>;
     summary?: Array<[string, string]>;
-    reportType?: 'stock_report' | 'customer_transaction' | 'standard';
+    reportType?: 'stock_report' | 'customer_transaction' | 'dealer_due' | 'standard';
     supplierName?: string;
     stockDate?: string;
     printDate?: string;
@@ -184,7 +184,10 @@ export const PrintModal: React.FC<PrintModalProps> = ({
             <span className="font-semibold truncate">
               {type === 'invoice' && `বিক্রয় চালান / ইনভয়েস প্রিভিউ (Invoice #${invoice?.no})`}
               {type === 'challan' && `ডেলিভারি চালান প্রিভিউ (Challan #${invoice?.no})`}
-              {type === 'delivery_challan' && `ডেলিভারি ট্রিপ চালান (${deliveryChallan?.challanNo})`}
+              {type === 'delivery_challan' &&
+                (deliveryChallan?.outType === 'manual' || deliveryChallan?.invoiceNo === 0
+                  ? `ম্যানুয়াল স্টক আউট স্লিপ (${deliveryChallan?.manualRefNo || deliveryChallan?.challanNo})`
+                  : `ডেলিভারি ট্রিপ চালান (${deliveryChallan?.challanNo})`)}
               {type === 'stock_in' && `স্টক ইন / ভেন্ডর চালান রিসিট (#${stockInRecord?.id})`}
               {type === 'receipt' && `টাকা জমার রশিদ প্রিভিউ (Money Receipt #${payment?.id})`}
               {type === 'report' && `রিপোর্ট প্রিন্ট প্রিভিউ (${reportData?.title})`}
@@ -561,17 +564,19 @@ export const PrintModal: React.FC<PrintModalProps> = ({
               </div>
             )}
 
-            {/* ========== SPECIFIC SPLIT DELIVERY CHALLAN (ডেলিভারি ট্রিপ চালান) ========== */}
-            {type === 'delivery_challan' && deliveryChallan && (
+            {/* ========== SPECIFIC SPLIT DELIVERY CHALLAN OR MANUAL STOCK OUT ========== */}
+            {type === 'delivery_challan' && deliveryChallan && (() => {
+              const isManualOut = deliveryChallan.outType === 'manual' || deliveryChallan.invoiceNo === 0;
+              return (
               <div>
                 <div className="flex justify-between items-start gap-4 mb-4 text-xs">
                   <div className="space-y-1 border border-slate-300 rounded p-2.5 w-1/2 bg-slate-50/50">
                     <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                      মাল ডেলিভারি গ্রহীতা (Delivery To)
+                      {isManualOut ? 'প্রাপক / স্টক আউট বিবরণ (Issued To)' : 'মাল ডেলিভারি গ্রহীতা (Delivery To)'}
                     </p>
                     <p className="font-bold text-slate-900 text-sm">{deliveryChallan.custName}</p>
-                    <p className="text-slate-700">ঠিকানা: {deliveryChallan.address || '—'}</p>
-                    <p className="text-slate-700">মোবাইল: {deliveryChallan.phone || '—'}</p>
+                    {deliveryChallan.address && <p className="text-slate-700">ঠিকানা: {deliveryChallan.address}</p>}
+                    {deliveryChallan.phone && <p className="text-slate-700">মোবাইল: {deliveryChallan.phone}</p>}
                     {deliveryChallan.deal && (
                       <p className="text-slate-800 font-semibold bg-amber-50 px-1 py-0.5 rounded border border-amber-200 inline-block mt-0.5">
                         Cust. Deal: {deliveryChallan.deal}
@@ -580,26 +585,40 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                   </div>
 
                   <div className="space-y-1 border border-slate-300 rounded p-2.5 w-1/2 text-right bg-slate-50/50">
-                    <div className="inline-block bg-emerald-800 text-white font-bold text-base px-3 py-0.5 rounded uppercase tracking-wider">
-                      DELIVERY SLIP (ডেলিভারি চালান)
+                    <div
+                      className={`inline-block text-white font-bold text-base px-3 py-0.5 rounded uppercase tracking-wider ${
+                        isManualOut ? 'bg-amber-700' : 'bg-emerald-800'
+                      }`}
+                    >
+                      {isManualOut ? 'MANUAL STOCK OUT (ম্যানুয়াল আউট)' : 'DELIVERY SLIP (ডেলিভারি চালান)'}
                     </div>
                     <p className="font-semibold text-slate-800">
-                      Challan No: <span className="font-mono font-bold text-base text-emerald-900">{deliveryChallan.challanNo}</span>
+                      {isManualOut ? 'ম্যানুয়াল নম্বর: ' : 'Challan No: '}
+                      <span className="font-mono font-bold text-base text-emerald-900">
+                        {isManualOut ? deliveryChallan.manualRefNo || deliveryChallan.challanNo : deliveryChallan.challanNo}
+                      </span>
                     </p>
-                    <p className="text-slate-700">
-                      Invoice Ref: <span className="font-mono font-bold">#{deliveryChallan.invoiceNo}</span>
-                    </p>
-                    <p className="text-slate-600 font-medium">
-                      ডেলিভারি তারিখ: {formatDateTimeBangla(deliveryChallan.date)}
-                    </p>
-                    {deliveryChallan.vehicleNo && (
-                      <p className="text-slate-700 font-semibold">
-                        গাড়ি নং: {deliveryChallan.vehicleNo}
+                    {!isManualOut ? (
+                      <p className="text-slate-700">
+                        Invoice Ref: <span className="font-mono font-bold">#{deliveryChallan.invoiceNo}</span>
+                      </p>
+                    ) : (
+                      <p className="text-amber-800 font-semibold text-[11px]">
+                        রেফারেন্স: চালানবিহীন ম্যানুয়াল স্টক আউট ({deliveryChallan.challanNo})
                       </p>
                     )}
-                    {deliveryChallan.driverName && (
+                    <p className="text-slate-600 font-medium">
+                      {isManualOut ? 'স্টক আউট তারিখ: ' : 'ডেলিভারি তারিখ: '}
+                      {formatDateTimeBangla(deliveryChallan.date)}
+                    </p>
+                    {deliveryChallan.vehicleNo && deliveryChallan.vehicleNo !== '—' && (
+                      <p className="text-slate-700 font-semibold">
+                        গাড়ি / মাধ্যম: {deliveryChallan.vehicleNo}
+                      </p>
+                    )}
+                    {deliveryChallan.driverName && deliveryChallan.driverName !== '—' && (
                       <p className="text-slate-600">
-                        ড্রাইভার: {deliveryChallan.driverName} {deliveryChallan.driverPhone ? `(${deliveryChallan.driverPhone})` : ''}
+                        ড্রাইভার: {deliveryChallan.driverName} {deliveryChallan.driverPhone && deliveryChallan.driverPhone !== '—' ? `(${deliveryChallan.driverPhone})` : ''}
                       </p>
                     )}
                   </div>
@@ -608,7 +627,9 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                 {/* Items in this specific delivery */}
                 <h4 className="font-bold text-slate-800 text-xs mb-1.5 flex items-center gap-1.5">
                   <Truck className="w-3.5 h-3.5 text-emerald-700" />
-                  বর্তমান ট্রিপে পাঠানো মালের বিবরণ (Items Dispatched in this Trip):
+                  {isManualOut
+                    ? 'ম্যানুয়াল স্টক আউটকৃত মালের বিবরণ (Manual Stock Out Items):'
+                    : 'বর্তমান ট্রিপে পাঠানো মালের বিবরণ (Items Dispatched in this Trip):'}
                 </h4>
                 <table className="w-full text-xs border-collapse border border-slate-400 mb-4">
                   <thead>
@@ -687,7 +708,8 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                   </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* ========== STOCK IN / VENDOR PURCHASE RECEIPT ========== */}
             {type === 'stock_in' && stockInRecord && (
@@ -794,15 +816,35 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                       {payment.method}
                     </span>
                   </div>
-                  <div className="flex justify-between border-b-2 border-slate-400 pb-2 text-base">
+                  <div className="flex justify-between border-b border-slate-200 pb-2 text-base">
                     <span className="text-slate-800 font-bold">প্রাপ্ত টাকা (Received Amount):</span>
                     <span className="font-mono font-bold text-emerald-800 text-lg">
                       ৳ {formatMoney(payment.amount)}
                     </span>
                   </div>
+                  {(payment.discount || 0) > 0 && (
+                    <>
+                      <div className="flex justify-between border-b border-slate-200 pb-2 text-sm">
+                        <span className="text-amber-800 font-bold">ডিসকাউন্ট / ছাড় (Discount):</span>
+                        <span className="font-mono font-bold text-amber-800">
+                          ৳ {formatMoney(payment.discount || 0)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b-2 border-slate-400 pb-2 text-sm bg-emerald-50/70 px-2 py-1 rounded">
+                        <span className="text-slate-900 font-bold">মোট সমন্বয় (Total Settled):</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          ৳ {formatMoney((payment.amount || 0) + (payment.discount || 0))}
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="border-b border-slate-200 pb-2 text-xs">
                     <span className="text-slate-600 block mb-0.5">কথায় (In Word):</span>
-                    <span className="font-semibold text-slate-800 italic">{inWords(payment.amount)}</span>
+                    <span className="font-semibold text-slate-800 italic">
+                      {(payment.amount || 0) > 0
+                        ? inWords(payment.amount)
+                        : 'শূন্য টাকা মাত্র (ডিসকাউন্ট দ্বারা সমন্বিত)'}
+                    </span>
                   </div>
                   {payment.remark && (
                     <div className="border-b border-slate-200 pb-2 text-xs">
@@ -1075,34 +1117,50 @@ export const PrintModal: React.FC<PrintModalProps> = ({
                           <tbody>
                             {block.rows.map((row, rIdx) => (
                               <tr key={rIdx} className="border-b border-slate-300">
-                                {row.map((cell, cIdx) => (
-                                  <td
-                                    key={cIdx}
-                                    className={`border border-slate-300 p-1.5 ${
-                                      cIdx === 0
-                                        ? 'text-center font-mono w-10'
-                                        : cIdx >= row.length - 2
-                                        ? 'text-right font-mono font-medium'
-                                        : 'text-left'
-                                    }`}
-                                  >
-                                    {cell}
-                                  </td>
-                                ))}
+                                {row.map((cell, cIdx) => {
+                                  const isDealerDue = reportData.reportType === 'dealer_due';
+                                  const cellAlignClass = isDealerDue
+                                    ? cIdx === 0
+                                      ? 'text-center font-mono w-28'
+                                      : cIdx === 1
+                                      ? 'text-left font-semibold text-slate-900'
+                                      : 'text-right font-mono font-bold text-rose-800 w-32'
+                                    : cIdx === 0
+                                    ? 'text-center font-mono w-10'
+                                    : cIdx >= row.length - 2
+                                    ? 'text-right font-mono font-medium'
+                                    : 'text-left';
+                                  return (
+                                    <td
+                                      key={cIdx}
+                                      className={`border border-slate-300 p-1.5 ${cellAlignClass}`}
+                                    >
+                                      {cell}
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             ))}
                             {block.total && (
                               <tr className="bg-slate-100 font-bold border-t-2 border-slate-500">
-                                {block.total.map((tCell, tIdx) => (
-                                  <td
-                                    key={tIdx}
-                                    className={`border border-slate-400 p-1.5 ${
-                                      tIdx >= block.total!.length - 2 ? 'text-right font-mono' : 'text-left'
-                                    }`}
-                                  >
-                                    {tCell}
-                                  </td>
-                                ))}
+                                {block.total.map((tCell, tIdx) => {
+                                  const isDealerDue = reportData.reportType === 'dealer_due';
+                                  const totalAlignClass = isDealerDue
+                                    ? tIdx === block.total!.length - 1
+                                      ? 'text-right font-mono text-rose-800'
+                                      : 'text-right'
+                                    : tIdx >= block.total!.length - 2
+                                    ? 'text-right font-mono'
+                                    : 'text-left';
+                                  return (
+                                    <td
+                                      key={tIdx}
+                                      className={`border border-slate-400 p-1.5 ${totalAlignClass}`}
+                                    >
+                                      {tCell}
+                                    </td>
+                                  );
+                                })}
                               </tr>
                             )}
                           </tbody>

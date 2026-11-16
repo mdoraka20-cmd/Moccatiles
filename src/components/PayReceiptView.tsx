@@ -32,6 +32,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [payDate, setPayDate] = useState<string>(() => getTodayLocalDateStr());
   const [amount, setAmount] = useState<string>('');
+  const [discount, setDiscount] = useState<string>('');
   const [method, setMethod] = useState<'Cash' | 'Bank' | 'Bkash'>('Cash');
   const [remark, setRemark] = useState<string>('');
   const [selectedPay, setSelectedPay] = useState<Payment | null>(null);
@@ -68,6 +69,9 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
   }, [payments, selectedPay]);
 
   const currentDue = selectedCust ? StorageService.getCustomerBalance(selectedCust.id) : 0;
+  const enteredAmount = Math.max(0, parseNum(amount));
+  const enteredDiscount = Math.max(0, parseNum(discount));
+  const remainingDuePreview = currentDue - enteredAmount - enteredDiscount;
 
   const filteredPayments = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -98,14 +102,20 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     [filteredPayments]
   );
 
+  const filteredTotalDiscount = useMemo(
+    () => filteredPayments.reduce((s, p) => s + (p.discount || 0), 0),
+    [filteredPayments]
+  );
+
   const handleSave = (print: boolean) => {
     if (!selectedCust) {
       setStatusMsg({ text: 'গ্রাহক বাছাই করুন।', type: 'error' });
       return;
     }
     const amtVal = parseNum(amount);
-    if (amtVal <= 0) {
-      setStatusMsg({ text: 'জমার সঠিক পরিমাণ দিন।', type: 'error' });
+    const discVal = parseNum(discount);
+    if (amtVal < 0 || discVal < 0 || (amtVal <= 0 && discVal <= 0)) {
+      setStatusMsg({ text: 'জমার সঠিক পরিমাণ অথবা ডিসকাউন্ট দিন।', type: 'error' });
       return;
     }
 
@@ -115,12 +125,14 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
       custId: selectedCust.id,
       custName: selectedCust.name,
       amount: amtVal,
+      discount: discVal > 0 ? discVal : 0,
       method,
       remark: remark.trim(),
     };
 
     onSavePayment(newPayment, print);
     setAmount('');
+    setDiscount('');
     setRemark('');
     setStatusMsg({ text: `রশিদ #${newPayment.id} সফলভাবে সংরক্ষিত হয়েছে!`, type: 'success' });
     setTimeout(() => setStatusMsg(null), 4000);
@@ -187,16 +199,31 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
             />
           </div>
 
-          {/* Amount & Method */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Amount, Discount & Method */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="space-y-1">
               <label className="block text-slate-700 font-semibold">জমার পরিমাণ (Amount ৳) : *</label>
               <input
-                type="text"
+                type="number"
+                step="any"
+                min="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 font-mono font-bold text-emerald-800 text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-slate-700 font-semibold">ডিসকাউন্ট / ছাড় (Discount ৳) :</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-white border border-amber-300 rounded px-2.5 py-1.5 font-mono font-bold text-amber-800 text-sm"
               />
             </div>
 
@@ -213,6 +240,23 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
               </select>
             </div>
           </div>
+
+          {selectedCust && (enteredAmount > 0 || enteredDiscount > 0) && (
+            <div className="sm:col-span-2 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+              <span className="text-slate-600">
+                বর্তমান বাকি: <strong className="text-slate-900">৳ {formatMoney(currentDue)}</strong>
+              </span>
+              <span className="text-emerald-700">
+                (-) জমা: <strong>৳ {formatMoney(enteredAmount)}</strong>
+              </span>
+              <span className="text-amber-700">
+                (-) ডিসকাউন্ট: <strong>৳ {formatMoney(enteredDiscount)}</strong>
+              </span>
+              <span className="text-rose-800 font-bold">
+                অবশিষ্ট বাকি: ৳ {formatMoney(remainingDuePreview)}
+              </span>
+            </div>
+          )}
 
           {/* Remark */}
           <div className="sm:col-span-2 space-y-1">
@@ -269,11 +313,16 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
             <h4 className="font-bold text-slate-800 text-xs">
               টাকা জমার ইতিহাস (Payment Receipts)
             </h4>
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-600 font-semibold">রশিদ: {filteredPayments.length} টি</span>
               <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
                 মোট জমা: ৳ {formatMoney(filteredTotalAmount)}
               </span>
+              {filteredTotalDiscount > 0 && (
+                <span className="font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  মোট ডিসকাউন্ট: ৳ {formatMoney(filteredTotalDiscount)}
+                </span>
+              )}
             </div>
           </div>
 
@@ -357,7 +406,8 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                 <th className="p-2 text-center w-16">Receipt</th>
                 <th className="p-2 w-32">তারিখ</th>
                 <th className="p-2">গ্রাহকের নাম</th>
-                <th className="p-2 text-right w-28">পরিমাণ (৳)</th>
+                <th className="p-2 text-right w-28">জমা (৳)</th>
+                <th className="p-2 text-right w-24">ডিসকাউন্ট (৳)</th>
                 <th className="p-2 text-center w-20">মাধ্যম</th>
                 <th className="p-2">মন্তব্য</th>
                 <th className="p-2 text-center w-24">অ্যাকশন</th>
@@ -379,6 +429,9 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                     <td className="p-2 font-semibold text-slate-900">{p.custName}</td>
                     <td className="p-2 text-right font-mono font-bold text-emerald-800">
                       ৳ {formatMoney(p.amount)}
+                    </td>
+                    <td className="p-2 text-right font-mono font-bold text-amber-700">
+                      {(p.discount || 0) > 0 ? `৳ ${formatMoney(p.discount || 0)}` : '—'}
                     </td>
                     <td className="p-2 text-center">
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
@@ -406,7 +459,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                               onRequireAdminAuth(
                                 `জমা রশিদ #${p.id} মুছে ফেলা`,
                                 executeDelete,
-                                `গ্রাহক: ${p.custName} | পরিমাণ: ৳ ${formatMoney(p.amount)} | মাধ্যম: ${p.method || 'Cash'}`
+                                `গ্রাহক: ${p.custName} | পরিমাণ: ৳ ${formatMoney(p.amount)}${(p.discount || 0) > 0 ? ` | ডিসকাউন্ট: ৳ ${formatMoney(p.discount || 0)}` : ''} | মাধ্যম: ${p.method || 'Cash'}`
                               );
                             } else {
                               executeDelete();
@@ -424,7 +477,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
               })}
               {filteredPayments.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-6 text-center text-slate-400">
+                  <td colSpan={8} className="p-6 text-center text-slate-400">
                     {payments.length === 0
                       ? 'কোনো জমা এন্ট্রি নেই'
                       : 'নির্বাচিত তারিখে কোনো পেমেন্ট রশিদ পাওয়া যায়নি — পুরাতন রশিদ দেখতে From/To তারিখ পরিবর্তন করুন'}

@@ -53,6 +53,7 @@ export interface Payment {
   custId: number;
   custName: string;
   amount: number;
+  discount?: number;
   remark: string;
   method: 'Cash' | 'Bank' | 'Bkash' | string;
 }
@@ -137,6 +138,14 @@ export interface NoticeBanner {
   updatedBy?: string;
 }
 
+export interface ContactsInfo {
+  companyName: string;
+  phones: string;
+  serviceMessage: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 // Stock In / Vendor Purchase Record
 export interface StockInItem {
   productId: number;
@@ -175,8 +184,10 @@ export interface DeliveryItem {
 
 export interface DeliveryChallan {
   id: number;
-  challanNo: string; // e.g. "CH-240001-1"
-  invoiceNo: number;
+  challanNo: string; // e.g. "CH-240001-1" or "MAN-101"
+  outType?: 'challan' | 'manual';
+  manualRefNo?: string;
+  invoiceNo: number; // 0 when manual stock out without invoice
   custId: number;
   custName: string;
   address: string;

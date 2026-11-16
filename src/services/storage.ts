@@ -14,6 +14,7 @@ import {
   AppUser,
   StaffPermissions,
   NoticeBanner,
+  ContactsInfo,
 } from '../types';
 import { getTodayLocalDateStr } from '../utils/numberWords';
 
@@ -34,6 +35,14 @@ const STORAGE_KEYS = {
   CATEGORIES: 'tiles_billing_categories_v2',
   VENDORS: 'tiles_billing_vendors_v2',
   NOTICE: 'tiles_billing_notice_v2',
+  CONTACTS: 'tiles_billing_contacts_v2',
+};
+
+export const defaultContactsInfo: ContactsInfo = {
+  companyName: 'Os Technology',
+  phones: '01732-970999/01682539640(whatsapp)',
+  serviceMessage:
+    'আপনার সার্ভিসের মেয়াদ ১০-১০-২০২৭ তারিখ পর্যন্ত ,দয়া করে শেষ হয়ার পূর্বেই আপনার সার্ভার ফি পরিশোধ করুণ',
 };
 
 export const defaultCategories: string[] = [
@@ -629,6 +638,33 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.NOTICE, JSON.stringify(notice));
   }
 
+  // Contacts & Service Validity Info (Admin controlled)
+  static getContactsInfo(): ContactsInfo {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.CONTACTS);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return {
+          companyName: parsed.companyName || defaultContactsInfo.companyName,
+          phones: parsed.phones || defaultContactsInfo.phones,
+          serviceMessage:
+            parsed.serviceMessage !== undefined
+              ? String(parsed.serviceMessage)
+              : defaultContactsInfo.serviceMessage,
+          updatedAt: parsed.updatedAt || '',
+          updatedBy: parsed.updatedBy || '',
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { ...defaultContactsInfo };
+  }
+
+  static saveContactsInfo(contacts: ContactsInfo) {
+    localStorage.setItem(STORAGE_KEYS.CONTACTS, JSON.stringify(contacts));
+  }
+
   // Categories Master Management
   static getCategories(): string[] {
     try {
@@ -802,20 +838,128 @@ export class StorageService {
     const updated = [record, ...records];
     this.saveStockInRecords(updated);
 
-    // Increase product stock quantities
+    // Increase product stock quantities cleanly
     const products = this.getProducts();
     record.items.forEach((it) => {
       const pIdx = products.findIndex((p) => p.id === it.productId);
       if (pIdx !== -1) {
-        products[pIdx].stockBox = (products[pIdx].stockBox || 0) + (it.box || 0);
-        products[pIdx].stockPiece = (products[pIdx].stockPiece || 0) + (it.piece || 0);
-        products[pIdx].stockSft = (products[pIdx].stockSft || 0) + (it.sft || 0);
+        const prod = products[pIdx];
+        if (prod.isTile && (prod.qtyPack || 0) > 0) {
+          const qp = prod.qtyPack;
+          const sp = prod.sftPack || 0;
+          const curPcs = Math.max(0, (prod.stockBox || 0) * qp + (prod.stockPiece || 0));
+          const addPcs = Math.max(0, (it.box || 0) * qp + (it.piece || 0));
+          const newPcs = curPcs + addPcs;
+          prod.stockBox = Math.floor(newPcs / qp);
+          prod.stockPiece = Math.round((newPcs - prod.stockBox * qp) * 100) / 100;
+          prod.stockSft =
+            sp > 0
+              ? Math.round(newPcs * (sp / qp) * 100) / 100
+              : Math.round(((prod.stockSft || 0) + (it.sft || 0)) * 100) / 100;
+        } else {
+          prod.stockBox = Math.round(((prod.stockBox || 0) + (it.box || 0)) * 100) / 100;
+          prod.stockPiece = Math.round(((prod.stockPiece || 0) + (it.piece || 0)) * 100) / 100;
+          prod.stockSft = Math.round(((prod.stockSft || 0) + (it.sft || 0)) * 100) / 100;
+        }
       }
     });
     this.saveProducts(products);
   }
 
-  // Delivery Challans (Stock Out & Split Deliveries)
+  // Available Stock Helpers
+  static getAvailableProductStock(prod?: Product) {
+    if (!prod) {
+      return {
+        stockBox: 0,
+        stockPiece: 0,
+        stockSft: 0,
+        totalPieces: 0,
+        hasStock: false,
+      };
+    }
+    const sBox = Math.max(0, prod.stockBox || 0);
+    const sPiece = Math.max(0, prod.stockPiece || 0);
+    const sSft = Math.max(0, prod.stockSft || 0);
+    if (prod.isTile && (prod.qtyPack || 0) > 0) {
+      const totalPieces = Math.max(0, sBox * prod.qtyPack + sPiece);
+      return {
+        stockBox: Math.floor(totalPieces / prod.qtyPack),
+        stockPiece: Math.round((totalPieces - Math.floor(totalPieces / prod.qtyPack) * prod.qtyPack) * 100) / 100,
+        stockSft: sSft,
+        totalPieces,
+        hasStock: totalPieces > 0,
+      };
+    }
+    const nonTileTotal = sBox > 0 && sPiece === 0 ? sBox : sPiece;
+    return {
+      stockBox: sBox,
+      stockPiece: sPiece,
+      stockSft: sSft,
+      totalPieces: nonTileTotal,
+      hasStock: sBox > 0 || sPiece > 0,
+    };
+  }
+
+  // Calculate maximum dispatchable quantity for a remaining invoice item given live stock
+  static computeDispatchableForRemaining(
+    prod: Product | undefined,
+    remBox: number,
+    remPiece: number,
+    remSft: number
+  ) {
+    if (!prod) {
+      return {
+        dispatchBox: 0,
+        dispatchPiece: 0,
+        dispatchSft: 0,
+        hasAnyStock: false,
+        isPartialByStock: remBox > 0 || remPiece > 0,
+      };
+    }
+    if (prod.isTile && (prod.qtyPack || 0) > 0) {
+      const qp = prod.qtyPack;
+      const sp = prod.sftPack || 0;
+      const availPcs = Math.max(0, (prod.stockBox || 0) * qp + (prod.stockPiece || 0));
+      const reqPcs = Math.max(0, remBox * qp + remPiece);
+      const dispPcs = Math.min(availPcs, reqPcs);
+      if (dispPcs <= 0) {
+        return {
+          dispatchBox: 0,
+          dispatchPiece: 0,
+          dispatchSft: 0,
+          hasAnyStock: false,
+          isPartialByStock: reqPcs > 0,
+        };
+      }
+      const dBox = Math.floor(dispPcs / qp);
+      const dPiece = Math.round((dispPcs - dBox * qp) * 100) / 100;
+      const dSft =
+        sp > 0
+          ? Math.round(dispPcs * (sp / qp) * 100) / 100
+          : Math.min(Math.max(0, prod.stockSft || 0), remSft);
+      return {
+        dispatchBox: dBox,
+        dispatchPiece: dPiece,
+        dispatchSft: dSft,
+        hasAnyStock: true,
+        isPartialByStock: dispPcs < reqPcs,
+      };
+    }
+    const availBox = Math.max(0, prod.stockBox || 0);
+    const availPiece = Math.max(0, prod.stockPiece || 0);
+    const dBox = Math.min(Math.max(0, remBox), availBox);
+    const dPiece = Math.min(Math.max(0, remPiece), availPiece);
+    const hasAny = dBox > 0 || dPiece > 0;
+    return {
+      dispatchBox: dBox,
+      dispatchPiece: dPiece,
+      dispatchSft: 0,
+      hasAnyStock: hasAny,
+      isPartialByStock: dBox < remBox || dPiece < remPiece,
+    };
+  }
+
+  // Delivery Challans (Stock Out, Split Deliveries & Manual Stock Out)
   static getDeliveryChallans(): DeliveryChallan[] {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
@@ -834,25 +978,42 @@ export class StorageService {
     const updated = [challan, ...challans];
     this.saveDeliveryChallans(updated);
 
-    // Deduct stock for delivered items
+    // Deduct stock cleanly for delivered / stock-out items
     const products = this.getProducts();
     challan.items.forEach((it) => {
       const pIdx = products.findIndex((p) => p.id === it.productId);
       if (pIdx !== -1) {
-        products[pIdx].stockBox = Math.max(0, (products[pIdx].stockBox || 0) - (it.box || 0));
-        products[pIdx].stockPiece = Math.max(0, (products[pIdx].stockPiece || 0) - (it.piece || 0));
-        products[pIdx].stockSft = Math.max(0, (products[pIdx].stockSft || 0) - (it.sft || 0));
+        const prod = products[pIdx];
+        if (prod.isTile && (prod.qtyPack || 0) > 0) {
+          const qp = prod.qtyPack;
+          const sp = prod.sftPack || 0;
+          const curPcs = Math.max(0, (prod.stockBox || 0) * qp + (prod.stockPiece || 0));
+          const dedPcs = Math.max(0, (it.box || 0) * qp + (it.piece || 0));
+          const newPcs = Math.max(0, curPcs - dedPcs);
+          prod.stockBox = Math.floor(newPcs / qp);
+          prod.stockPiece = Math.round((newPcs - prod.stockBox * qp) * 100) / 100;
+          prod.stockSft =
+            sp > 0
+              ? Math.round(newPcs * (sp / qp) * 100) / 100
+              : Math.max(0, Math.round(((prod.stockSft || 0) - (it.sft || 0)) * 100) / 100);
+        } else {
+          prod.stockBox = Math.max(0, Math.round(((prod.stockBox || 0) - (it.box || 0)) * 100) / 100);
+          prod.stockPiece = Math.max(0, Math.round(((prod.stockPiece || 0) - (it.piece || 0)) * 100) / 100);
+          prod.stockSft = Math.max(0, Math.round(((prod.stockSft || 0) - (it.sft || 0)) * 100) / 100);
+        }
       }
     });
     this.saveProducts(products);
 
-    // Update invoice delivery status
-    const invoices = this.getInvoices();
-    const invIdx = invoices.findIndex((i) => i.no === challan.invoiceNo);
-    if (invIdx !== -1) {
-      const statusObj = this.getInvoiceDeliveryStatus(challan.invoiceNo, invoices[invIdx], updated);
-      invoices[invIdx].deliveryStatus = statusObj.status;
-      this.saveInvoices(invoices);
+    // Update invoice delivery status when linked to an invoice challan
+    if (challan.invoiceNo > 0) {
+      const invoices = this.getInvoices();
+      const invIdx = invoices.findIndex((i) => i.no === challan.invoiceNo);
+      if (invIdx !== -1) {
+        const statusObj = this.getInvoiceDeliveryStatus(challan.invoiceNo, invoices[invIdx], updated);
+        invoices[invIdx].deliveryStatus = statusObj.status;
+        this.saveInvoices(invoices);
+      }
     }
   }
 
@@ -870,31 +1031,48 @@ export class StorageService {
     const remaining = challans.filter((ch) => ch.id !== challanId);
     this.saveDeliveryChallans(remaining);
 
-    // Restore stock for deleted delivery challan items
+    // Restore stock for deleted delivery challan / manual stock out items
     const products = this.getProducts();
     const updatedProducts: Product[] = [];
     target.items.forEach((it) => {
       const pIdx = products.findIndex((p) => p.id === it.productId);
       if (pIdx !== -1) {
-        products[pIdx].stockBox = Math.round(((products[pIdx].stockBox || 0) + (it.box || 0)) * 100) / 100;
-        products[pIdx].stockPiece = Math.round(((products[pIdx].stockPiece || 0) + (it.piece || 0)) * 100) / 100;
-        products[pIdx].stockSft = Math.round(((products[pIdx].stockSft || 0) + (it.sft || 0)) * 100) / 100;
-        updatedProducts.push(products[pIdx]);
+        const prod = products[pIdx];
+        if (prod.isTile && (prod.qtyPack || 0) > 0) {
+          const qp = prod.qtyPack;
+          const sp = prod.sftPack || 0;
+          const curPcs = Math.max(0, (prod.stockBox || 0) * qp + (prod.stockPiece || 0));
+          const addPcs = Math.max(0, (it.box || 0) * qp + (it.piece || 0));
+          const newPcs = curPcs + addPcs;
+          prod.stockBox = Math.floor(newPcs / qp);
+          prod.stockPiece = Math.round((newPcs - prod.stockBox * qp) * 100) / 100;
+          prod.stockSft =
+            sp > 0
+              ? Math.round(newPcs * (sp / qp) * 100) / 100
+              : Math.round(((prod.stockSft || 0) + (it.sft || 0)) * 100) / 100;
+        } else {
+          prod.stockBox = Math.round(((prod.stockBox || 0) + (it.box || 0)) * 100) / 100;
+          prod.stockPiece = Math.round(((prod.stockPiece || 0) + (it.piece || 0)) * 100) / 100;
+          prod.stockSft = Math.round(((prod.stockSft || 0) + (it.sft || 0)) * 100) / 100;
+        }
+        updatedProducts.push(prod);
       }
     });
     if (updatedProducts.length > 0) {
       this.saveProducts(products);
     }
 
-    // Recompute parent invoice deliveryStatus
-    const invoices = this.getInvoices();
-    const invIdx = invoices.findIndex((i) => i.no === target.invoiceNo);
+    // Recompute parent invoice deliveryStatus when linked to an invoice
     let updatedInvoice: Invoice | undefined;
-    if (invIdx !== -1) {
-      const statusObj = this.getInvoiceDeliveryStatus(target.invoiceNo, invoices[invIdx], remaining);
-      invoices[invIdx].deliveryStatus = statusObj.status;
-      updatedInvoice = invoices[invIdx];
-      this.saveInvoices(invoices);
+    if (target.invoiceNo > 0) {
+      const invoices = this.getInvoices();
+      const invIdx = invoices.findIndex((i) => i.no === target.invoiceNo);
+      if (invIdx !== -1) {
+        const statusObj = this.getInvoiceDeliveryStatus(target.invoiceNo, invoices[invIdx], remaining);
+        invoices[invIdx].deliveryStatus = statusObj.status;
+        updatedInvoice = invoices[invIdx];
+        this.saveInvoices(invoices);
+      }
     }
 
     return {
@@ -1033,7 +1211,7 @@ export class StorageService {
     const payments = this.getPayments();
     for (const p of payments) {
       if (p.custId === custId) {
-        balance -= p.amount || 0;
+        balance -= (p.amount || 0) + (p.discount || 0);
       }
     }
 
@@ -1107,6 +1285,7 @@ export class StorageService {
       vendors: this.getVendors(),
       staffPermissions: this.getStaffPermissions(),
       notice: this.getNotice(),
+      contactsInfo: this.getContactsInfo(),
       exportedAt: new Date().toISOString(),
     };
     return JSON.stringify(data, null, 2);
@@ -1130,6 +1309,7 @@ export class StorageService {
       if (Array.isArray(data.vendors)) this.saveVendors(data.vendors);
       if (data.staffPermissions) this.saveStaffPermissions(data.staffPermissions);
       if (data.notice) this.saveNotice(data.notice);
+      if (data.contactsInfo) this.saveContactsInfo(data.contactsInfo);
       return true;
     } catch (e) {
       console.error('Import failed', e);

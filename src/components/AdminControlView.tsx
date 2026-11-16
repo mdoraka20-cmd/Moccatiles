@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
-import { StorageService, defaultStaffPermissions } from '../services/storage';
+import { AppUser, ContactsInfo, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
+import { StorageService, defaultStaffPermissions, defaultContactsInfo } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import { getTodayLocalDateStr, getNowLocalDateTimeStr } from '../utils/numberWords';
 import {
@@ -41,6 +41,8 @@ interface AdminControlViewProps {
   staffPermissions?: StaffPermissions;
   notice?: NoticeBanner;
   onUpdateNotice?: (notice: NoticeBanner) => void;
+  contactsInfo?: ContactsInfo;
+  onUpdateContacts?: (contacts: ContactsInfo) => void;
   onDeletePendingChallan?: (invoiceNo: number) => void;
   onDeleteDeliveryChallan?: (challanId: number) => void;
   onDataChanged: () => void;
@@ -58,11 +60,13 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   staffPermissions: propStaffPermissions,
   notice: propNotice,
   onUpdateNotice,
+  contactsInfo: propContacts,
+  onUpdateContacts,
   onDeletePendingChallan,
   onDeleteDeliveryChallan,
   onDataChanged,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'notice' | 'data_control'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'notice' | 'contacts' | 'data_control'>('users');
 
   // Users State (always synchronized with live Firestore updates)
   const [users, setUsers] = useState<AppUser[]>(() => (propUsers && propUsers.length > 0 ? propUsers : StorageService.getUsers()));
@@ -125,6 +129,13 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   );
   const [noticeStatusMsg, setNoticeStatusMsg] = useState('');
 
+  // Dashboard Contacts & Service Validity Message State
+  const initialContacts = propContacts || StorageService.getContactsInfo();
+  const [contactCompany, setContactCompany] = useState<string>(initialContacts.companyName);
+  const [contactPhones, setContactPhones] = useState<string>(initialContacts.phones);
+  const [contactMessage, setContactMessage] = useState<string>(initialContacts.serviceMessage);
+  const [contactStatusMsg, setContactStatusMsg] = useState('');
+
   useEffect(() => {
     const onUpdate = () => setStorageTick((t) => t + 1);
     window.addEventListener('app-storage-updated', onUpdate);
@@ -159,6 +170,33 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
       setNoticeMessage(propNotice.message);
     }
   }, [propNotice]);
+
+  useEffect(() => {
+    if (propContacts) {
+      setContactCompany(propContacts.companyName);
+      setContactPhones(propContacts.phones);
+      setContactMessage(propContacts.serviceMessage);
+    }
+  }, [propContacts]);
+
+  const handleSaveContacts = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload: ContactsInfo = {
+      companyName: contactCompany.trim() || defaultContactsInfo.companyName,
+      phones: contactPhones.trim() || defaultContactsInfo.phones,
+      serviceMessage: contactMessage.trim(),
+      updatedAt: new Date().toLocaleString('bn-BD'),
+      updatedBy: currentUser.name,
+    };
+    StorageService.saveContactsInfo(payload);
+    if (onUpdateContacts) {
+      onUpdateContacts(payload);
+    } else {
+      FirestoreSyncService.syncContactsInfo(payload).catch(console.error);
+    }
+    setContactStatusMsg('✅ Contacts তথ্য ও সার্ভিস মেসেজ সংরক্ষিত হয়ে ড্যাশবোর্ডে সব ইউজারের জন্য আপডেট হয়েছে!');
+    setTimeout(() => setContactStatusMsg(''), 4000);
+  };
 
   const publishNotice = (nextEnabled: boolean, nextMsg: string, feedbackText: string) => {
     const payload: NoticeBanner = {
@@ -726,6 +764,17 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
           >
             {noticeEnabled ? 'ON' : 'OFF'}
           </span>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('contacts')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
+            activeSubTab === 'contacts'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          <Phone className="w-3.5 h-3.5" />
+          Contacts ও মেয়াদ
         </button>
         <button
           onClick={() => setActiveSubTab('data_control')}
@@ -1618,6 +1667,112 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
           </div>
         )}
 
+        {/* ================= 4.5 CONTACTS & SERVICE EXPIRY MESSAGE SUBTAB ================= */}
+        {activeSubTab === 'contacts' && (
+          <div className="space-y-4 max-w-4xl mx-auto">
+            {contactStatusMsg && (
+              <div className="p-3 rounded-lg border font-semibold text-xs flex items-center justify-between bg-emerald-50 border-emerald-300 text-emerald-800">
+                <span>{contactStatusMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setContactStatusMsg('')}
+                  className="text-xs font-bold px-2 py-0.5 rounded hover:bg-black/5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            <div className="bg-white rounded-lg border border-slate-300 p-4 sm:p-5 shadow-xs space-y-4">
+              <div className="pb-3 border-b border-slate-200">
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-amber-600" />
+                  ড্যাশবোর্ড Contacts ও সার্ভার মেয়াদ মেসেজ (Admin Controlled)
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  ড্যাশবোর্ডের উপরে থাকা "Contacts" অপশনের ভেতরে সব ইউজার (Admin ও Staff) এই তথ্য ও এডমিন মেসেজ দেখতে পাবে।
+                </p>
+              </div>
+
+              <form onSubmit={handleSaveContacts} className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">কোম্পানির নাম (Company):</label>
+                    <input
+                      type="text"
+                      value={contactCompany}
+                      onChange={(e) => setContactCompany(e.target.value)}
+                      placeholder="Os Technology"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-bold focus:bg-white focus:border-amber-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">মোবাইল / হোয়াটসঅ্যাপ (Mobile):</label>
+                    <input
+                      type="text"
+                      value={contactPhones}
+                      onChange={(e) => setContactPhones(e.target.value)}
+                      placeholder="01732-970999/01682539640(whatsapp)"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 font-mono font-semibold focus:bg-white focus:border-amber-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    এডমিন থেকে সার্ভিস মেয়াদ / সার্ভার ফি মেসেজ (Message):
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={contactMessage}
+                    onChange={(e) => setContactMessage(e.target.value)}
+                    placeholder={defaultContactsInfo.serviceMessage}
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-900 text-xs sm:text-sm focus:bg-white focus:border-amber-600 focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContactCompany(defaultContactsInfo.companyName);
+                      setContactPhones(defaultContactsInfo.phones);
+                      setContactMessage(defaultContactsInfo.serviceMessage);
+                    }}
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded font-semibold cursor-pointer transition"
+                  >
+                    ডিফল্ট টেক্সট বসান
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    সংরক্ষণ ও প্রকাশ করুন (Save & Publish)
+                  </button>
+                </div>
+              </form>
+
+              <div className="pt-3 border-t border-slate-200 space-y-2">
+                <span className="block text-[11px] font-bold text-slate-600">
+                  ড্যাশবোর্ড Contacts প্রিভিউ:
+                </span>
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-2">
+                  <div className="font-bold text-sm text-slate-900">{contactCompany || defaultContactsInfo.companyName}</div>
+                  <div className="font-mono font-semibold text-slate-700">
+                    mobile:{contactPhones || defaultContactsInfo.phones}
+                  </div>
+                  {contactMessage.trim() && (
+                    <div className="bg-amber-50 border border-amber-300 rounded p-2.5 text-rose-800 font-bold">
+                      "{contactMessage}"
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ================= 5. DATA BACKUP, RESTORE & DELETE SUBTAB ================= */}
         {activeSubTab === 'data_control' && (
           <div className="space-y-4 max-w-5xl mx-auto">
@@ -1890,8 +2045,20 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
                       const totSft = ch.items.reduce((s, it) => s + (it.sft || 0), 0);
                       return (
                         <tr key={ch.id} className="hover:bg-slate-50">
-                          <td className="p-2 text-center font-mono font-bold text-emerald-900">{ch.challanNo}</td>
-                          <td className="p-2 text-center font-mono font-bold text-slate-700">#{ch.invoiceNo}</td>
+                          <td className="p-2 text-center font-mono font-bold text-emerald-900">
+                            {ch.outType === 'manual' || ch.invoiceNo === 0
+                              ? ch.manualRefNo || ch.challanNo
+                              : ch.challanNo}
+                          </td>
+                          <td className="p-2 text-center font-mono font-bold text-slate-700">
+                            {ch.outType === 'manual' || ch.invoiceNo === 0 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">
+                                ম্যানুয়াল আউট
+                              </span>
+                            ) : (
+                              `#${ch.invoiceNo}`
+                            )}
+                          </td>
                           <td className="p-2 font-mono text-slate-600">{ch.date?.slice(0, 16)}</td>
                           <td className="p-2">
                             <div className="font-bold text-slate-800">{ch.custName}</div>

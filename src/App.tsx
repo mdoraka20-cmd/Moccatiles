@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ActiveTab, AppUser, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
+import { ActiveTab, AppUser, ContactsInfo, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
 import { StorageService } from './services/storage';
 import { HeaderToolbar } from './components/HeaderToolbar';
 import { DashboardView } from './components/DashboardView';
@@ -82,6 +82,7 @@ export default function App() {
   const [users, setUsers] = useState<AppUser[]>(() => StorageService.getUsers());
   const [dealers, setDealers] = useState<DealerDeal[]>(() => StorageService.getDealers());
   const [notice, setNotice] = useState<NoticeBanner>(() => StorageService.getNotice());
+  const [contactsInfo, setContactsInfo] = useState<ContactsInfo>(() => StorageService.getContactsInfo());
 
   // Customer modal picker state
   const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
@@ -181,6 +182,7 @@ export default function App() {
       onVendorsUpdate: () => refreshAllData(),
       onStaffPermsUpdate: (perms) => setStaffPermissions(perms),
       onNoticeUpdate: (newNotice) => setNotice(newNotice),
+      onContactsUpdate: (newContacts) => setContactsInfo(newContacts),
     });
 
     return () => clearInterval(interval);
@@ -196,6 +198,7 @@ export default function App() {
     setUsers(StorageService.getUsers());
     setDealers(StorageService.getDealers());
     setNotice(StorageService.getNotice());
+    setContactsInfo(StorageService.getContactsInfo());
     if (StorageService.isUserLoggedIn()) {
       setCurrentUser(StorageService.getCurrentUser());
     }
@@ -421,6 +424,7 @@ export default function App() {
             products={products}
             payments={payments}
             shop={shop}
+            contactsInfo={contactsInfo}
             currentUser={currentUser}
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
             onNavigate={(tab) => setActiveTab(tab)}
@@ -483,6 +487,7 @@ export default function App() {
           <CustomerView
             customers={customers}
             invoices={invoices}
+            dealers={dealers}
             currentUser={currentUser}
             onSaveCustomer={handleSaveCustomer}
             onDeleteCustomer={handleDeleteCustomer}
@@ -578,6 +583,11 @@ export default function App() {
               setNotice(updatedNotice);
               FirestoreSyncService.syncNotice(updatedNotice).catch(console.error);
             }}
+            contactsInfo={contactsInfo}
+            onUpdateContacts={(updatedContacts) => {
+              setContactsInfo(updatedContacts);
+              FirestoreSyncService.syncContactsInfo(updatedContacts).catch(console.error);
+            }}
             onDeletePendingChallan={handleDeleteInvoice}
             onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
             onDataChanged={refreshAllData}
@@ -618,6 +628,7 @@ export default function App() {
             <CustomerView
               customers={customers}
               invoices={invoices}
+              dealers={dealers}
               currentUser={currentUser}
               onSaveCustomer={handleSaveCustomer}
               onDeleteCustomer={handleDeleteCustomer}

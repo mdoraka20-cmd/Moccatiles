@@ -22,8 +22,9 @@ import {
   AppUser,
   StaffPermissions,
   NoticeBanner,
+  ContactsInfo,
 } from '../types';
-import { StorageService, defaultStaffPermissions } from './storage';
+import { StorageService, defaultStaffPermissions, defaultContactsInfo } from './storage';
 
 // Recursively strip undefined properties so Firestore setDoc/batch.set never throws
 function sanitizeForFirestore<T>(val: T): T {
@@ -64,6 +65,7 @@ export class FirestoreSyncService {
     onVendorsUpdate?: (vendors: string[]) => void;
     onStaffPermsUpdate?: (perms: StaffPermissions) => void;
     onNoticeUpdate?: (notice: NoticeBanner) => void;
+    onContactsUpdate?: (contacts: ContactsInfo) => void;
   }) {
     if (this.isInitialized) return;
     this.isInitialized = true;
@@ -264,6 +266,30 @@ export class FirestoreSyncService {
           }
         },
         (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/notice`)
+      );
+
+      // 13. Contacts & Service Validity Message Listener
+      onSnapshot(
+        doc(db, metaPath, 'contacts'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as ContactsInfo;
+            const normalized: ContactsInfo = {
+              companyName: data.companyName || defaultContactsInfo.companyName,
+              phones: data.phones || defaultContactsInfo.phones,
+              serviceMessage:
+                data.serviceMessage !== undefined
+                  ? String(data.serviceMessage)
+                  : defaultContactsInfo.serviceMessage,
+              updatedAt: data.updatedAt || '',
+              updatedBy: data.updatedBy || '',
+            };
+            StorageService.saveContactsInfo(normalized);
+            if (callbacks.onContactsUpdate) callbacks.onContactsUpdate(normalized);
+            StorageService.notifyUpdate();
+          }
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/contacts`)
       );
     };
 
@@ -623,11 +649,13 @@ export class FirestoreSyncService {
     const path = `deliveryChallans/${challan.id}`;
     try {
       await setDoc(doc(db, 'deliveryChallans', String(challan.id)), sanitizeForFirestore(challan));
-      // Update invoice and product stocks in Firestore
-      const invoices = StorageService.getInvoices();
-      const inv = invoices.find((i) => i.no === challan.invoiceNo);
-      if (inv) {
-        await setDoc(doc(db, 'invoices', String(inv.no)), sanitizeForFirestore(inv));
+      // Update invoice (if linked to an invoice challan) and product stocks in Firestore
+      if (challan.invoiceNo > 0) {
+        const invoices = StorageService.getInvoices();
+        const inv = invoices.find((i) => i.no === challan.invoiceNo);
+        if (inv) {
+          await setDoc(doc(db, 'invoices', String(inv.no)), sanitizeForFirestore(inv));
+        }
       }
       const products = StorageService.getProducts();
       for (const it of challan.items) {
@@ -675,6 +703,18 @@ export class FirestoreSyncService {
     const path = 'metadata/notice';
     try {
       await setDoc(doc(db, 'metadata', 'notice'), sanitizeForFirestore(notice));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }
+
+  // Sync Contacts & Service Fee Message to Firestore (visible in Dashboard Contacts for all users)
+  static async syncContactsInfo(contacts: ContactsInfo) {
+    StorageService.saveContactsInfo(contacts);
+    StorageService.notifyUpdate();
+    const path = 'metadata/contacts';
+    try {
+      await setDoc(doc(db, 'metadata', 'contacts'), sanitizeForFirestore(contacts));
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, path);
     }
@@ -761,6 +801,9 @@ export class FirestoreSyncService {
       );
       if (data.notice) {
         await setDoc(doc(db, 'metadata', 'notice'), sanitizeForFirestore(StorageService.getNotice()));
+      }
+      if (data.contactsInfo) {
+        await setDoc(doc(db, 'metadata', 'contacts'), sanitizeForFirestore(StorageService.getContactsInfo()));
       }
       return true;
     } catch (err) {

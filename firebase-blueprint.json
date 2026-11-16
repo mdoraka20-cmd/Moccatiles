@@ -90,6 +90,7 @@
         "custId": { "type": "number", "description": "Customer ID" },
         "custName": { "type": "string", "description": "Customer name" },
         "amount": { "type": "number", "description": "Payment amount" },
+        "discount": { "type": "number", "description": "Discount given on payment receipt" },
         "remark": { "type": "string", "description": "Payment remark" },
         "method": { "type": "string", "description": "Payment channel: Cash, Bkash, Bank, Cheque" }
       },
@@ -159,8 +160,10 @@
       "type": "object",
       "properties": {
         "id": { "type": "number", "description": "Dispatch trip ID" },
-        "challanNo": { "type": "string", "description": "Challan code" },
-        "invoiceNo": { "type": "number", "description": "Reference invoice number" },
+        "challanNo": { "type": "string", "description": "Challan code or manual stock out code" },
+        "outType": { "type": "string", "description": "Stock out source type: challan or manual" },
+        "manualRefNo": { "type": "string", "description": "Manual reference number when outType is manual" },
+        "invoiceNo": { "type": "number", "description": "Reference invoice number (0 for manual stock out)" },
         "custId": { "type": "number", "description": "Customer ID" },
         "custName": { "type": "string", "description": "Customer name" },
         "address": { "type": "string", "description": "Destination address" },
@@ -186,8 +189,11 @@
         "staffPerms": { "type": "object", "description": "Staff permission flags" },
         "enabled": { "type": "boolean", "description": "Notice ticker enabled state" },
         "message": { "type": "string", "description": "Notice ticker broadcast text" },
-        "updatedAt": { "type": "string", "description": "Last notice update timestamp" },
-        "updatedBy": { "type": "string", "description": "Admin who updated the notice" }
+        "companyName": { "type": "string", "description": "Support company name shown in Dashboard Contacts" },
+        "phones": { "type": "string", "description": "Support phone/whatsapp numbers shown in Dashboard Contacts" },
+        "serviceMessage": { "type": "string", "description": "Admin-controlled service validity / server fee notice message" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" },
+        "updatedBy": { "type": "string", "description": "Admin who updated the metadata" }
       }
     }
   },

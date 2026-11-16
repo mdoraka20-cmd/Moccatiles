@@ -1,4 +1,6 @@
-import { Customer, Invoice, Payment, Product, ShopConfig, AppUser } from '../types';
+import React, { useState } from 'react';
+import { Customer, Invoice, Payment, Product, ShopConfig, AppUser, ContactsInfo } from '../types';
+import { StorageService, defaultContactsInfo } from '../services/storage';
 import { formatMoney, getTodayLocalDateStr } from '../utils/numberWords';
 import {
   FileText,
@@ -19,6 +21,10 @@ import {
   Lock,
   CheckCircle2,
   Sparkles,
+  Phone,
+  MessageCircle,
+  Building2,
+  X,
 } from 'lucide-react';
 
 interface DashboardViewProps {
@@ -27,6 +33,7 @@ interface DashboardViewProps {
   products: Product[];
   payments: Payment[];
   shop: ShopConfig;
+  contactsInfo?: ContactsInfo;
   onNavigate: (tab: any) => void;
   onPrintInvoice: (inv: Invoice, isChallan: boolean) => void;
   onSelectCustomerForPayment: (cust: Customer) => void;
@@ -40,12 +47,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   products,
   payments,
   shop,
+  contactsInfo,
   onNavigate,
   onPrintInvoice,
   onSelectCustomerForPayment,
   currentUser,
   onOpenLoginModal,
 }) => {
+  const [showContactsModal, setShowContactsModal] = useState(false);
+  const resolvedContacts = contactsInfo || defaultContactsInfo;
   const today = getTodayLocalDateStr();
 
   // Daily invoices
@@ -84,7 +94,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       }
       for (const p of payments) {
         if (p.custId === cust.id) {
-          b -= p.amount || 0;
+          b -= (p.amount || 0) + (p.discount || 0);
         }
       }
       if (b > 0) totalDue += b;
@@ -151,7 +161,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   ];
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
+      {/* Top Bar with Contacts option visible to all users */}
+      <div className="bg-white border border-slate-200 rounded-lg px-4 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs text-slate-700 font-semibold">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-600"></span>
+          <span>{shop.name} — ড্যাশবোর্ড</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowContactsModal(true)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/40 rounded-md text-xs font-bold shadow-xs cursor-pointer transition active:scale-95"
+        >
+          <Phone className="w-3.5 h-3.5 text-amber-400" />
+          <span>Contacts</span>
+        </button>
+      </div>
+
       {/* 6 Large Metrics Tiles (Faithful to MainForm in Billing.cs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {tiles.map((tile, idx) => {
@@ -392,6 +418,80 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           ব্যাকআপ / রিস্টোর করুন
         </button>
       </div>
+
+      {/* Contacts & Service Validity Modal (Visible to all users) */}
+      {showContactsModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+          onClick={() => setShowContactsModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-300 overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm text-amber-300 tracking-wide">Contacts</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContactsModal(false)}
+                className="text-slate-400 hover:text-white cursor-pointer p-1 rounded hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg shrink-0">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      সফটওয়্যার ও সার্ভার সাপোর্ট
+                    </div>
+                    <h4 className="text-base font-extrabold text-slate-900">
+                      {resolvedContacts.companyName}
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 flex items-center gap-2 text-slate-800 font-mono font-bold text-xs sm:text-sm">
+                  <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>mobile:{resolvedContacts.phones}</span>
+                </div>
+              </div>
+
+              {resolvedContacts.serviceMessage && (
+                <div className="bg-amber-50 border-2 border-amber-400 rounded-lg p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                    <span>এডমিন বার্তা (Admin Notice)</span>
+                    {resolvedContacts.updatedAt && (
+                      <span className="font-normal text-amber-700">{resolvedContacts.updatedAt}</span>
+                    )}
+                  </div>
+                  <p className="text-xs sm:text-sm font-bold text-rose-800 leading-relaxed">
+                    "{resolvedContacts.serviceMessage}"
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowContactsModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md font-bold cursor-pointer transition"
+                >
+                  বন্ধ করুন
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

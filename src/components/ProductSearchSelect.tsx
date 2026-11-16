@@ -10,6 +10,8 @@ interface ProductSearchSelectProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  addedProductIds?: number[];
+  addedProductCodes?: string[];
 }
 
 export const ProductSearchSelect: React.FC<ProductSearchSelectProps> = ({
@@ -19,6 +21,8 @@ export const ProductSearchSelect: React.FC<ProductSearchSelectProps> = ({
   placeholder = 'পণ্য কোড বা নাম লিখুন (কিবোর্ড দিয়ে খুঁজুন)...',
   className = '',
   disabled = false,
+  addedProductIds = [],
+  addedProductCodes = [],
 }) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -219,6 +223,10 @@ export const ProductSearchSelect: React.FC<ProductSearchSelectProps> = ({
             {filteredProducts.map((p, idx) => {
               const isSelected = String(p.id) === String(selectedProductId);
               const isHighlighted = idx === highlightedIndex;
+              const isAlreadyAdded =
+                addedProductIds.includes(p.id) ||
+                (Boolean(p.code?.trim()) &&
+                  addedProductCodes.includes(p.code.trim().toLowerCase()));
 
               return (
                 <li
@@ -226,7 +234,9 @@ export const ProductSearchSelect: React.FC<ProductSearchSelectProps> = ({
                   onClick={() => handleSelect(p)}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                   className={`px-3 py-2 cursor-pointer transition flex items-center justify-between gap-2 ${
-                    isHighlighted
+                    isAlreadyAdded
+                      ? 'bg-amber-50/70 text-slate-600'
+                      : isHighlighted
                       ? 'bg-emerald-50 text-emerald-950 font-medium'
                       : 'hover:bg-slate-50 text-slate-800'
                   } ${isSelected ? 'border-l-4 border-emerald-600 bg-emerald-50/70' : ''}`}
@@ -239,6 +249,11 @@ export const ProductSearchSelect: React.FC<ProductSearchSelectProps> = ({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-slate-900 text-xs truncate">{p.name}</span>
+                        {isAlreadyAdded && (
+                          <span className="text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-1.5 rounded">
+                            ইতিমধ্যে যোগ করা
+                          </span>
+                        )}
                         {p.vendor && (
                           <span className="text-[10px] text-purple-700 bg-purple-50 border border-purple-200 px-1.5 rounded font-medium">
                             {p.vendor}

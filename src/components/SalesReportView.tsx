@@ -28,7 +28,7 @@ export interface ReportData {
   info?: string[];
   blocks: ReportBlock[];
   summary?: Array<[string, string]>;
-  reportType?: 'stock_report' | 'customer_transaction' | 'standard';
+  reportType?: 'stock_report' | 'customer_transaction' | 'dealer_due' | 'standard';
   supplierName?: string;
   stockDate?: string;
   printDate?: string;
@@ -57,6 +57,16 @@ const formatMMDDYYYY = (dateStr?: string) => {
   const mon = String(d.getMonth() + 1).padStart(2, '0');
   const yr = d.getFullYear();
   return `${mon}/${day}/${yr}`;
+};
+
+const formatDDMMYYYY = (dateStr?: string) => {
+  if (!dateStr) return '—';
+  const d = parseLocalDateTime(dateStr);
+  if (isNaN(d.getTime())) return dateStr.slice(0, 10);
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = String(d.getMonth() + 1).padStart(2, '0');
+  const yr = d.getFullYear();
+  return `${day}/${mon}/${yr}`;
 };
 
 const getPrintDateTime = () => {
@@ -90,6 +100,7 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
     { id: 5, title: '6. Dealer wise Report', desc: 'ডিলার / রেফারেন্স অনুযায়ী বিক্রয়' },
     { id: 6, title: '7. Product wise sales', desc: 'পণ্য অনুযায়ী মোট বিক্রয় পরিমাণ ও মূল্য' },
     { id: 7, title: '8. Stock Report (স্টক রিপোর্ট)', desc: 'সাপ্লায়ার অনুযায়ী ProductID, Size, Grade, Type, Sft ও সমাপনী কার্টন|পিস' },
+    { id: 8, title: '9. Dealer Wise Due list', desc: 'ডিলার ভিত্তিক কাস্টমারের বকেয়া ও সর্বশেষ জমার তারিখ' },
   ];
 
   const [selectedReportId, setSelectedReportId] = useState<number>(0);
@@ -136,10 +147,20 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
     }
   };
 
-  // Distinct dealers
-  const distinctDealers = Array.from(
-    new Set(invoices.map((v) => v.deal).filter((d) => d && d.trim().length > 0))
-  ).sort();
+  // Distinct dealers (combined from invoices, customers, and master dealers)
+  const distinctDealers = React.useMemo(() => {
+    const map = new Map<string, string>();
+    const addDeal = (raw?: string) => {
+      const t = (raw || '').trim();
+      if (!t) return;
+      const k = t.toLowerCase();
+      if (!map.has(k)) map.set(k, t);
+    };
+    StorageService.getDealers().forEach((d) => addDeal(d.name));
+    customers.forEach((c) => addDeal(c.deal));
+    invoices.forEach((v) => addDeal(v.deal));
+    return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
+  }, [customers, invoices]);
 
   // Helper: Filter invoices in date range
   const getInvoicesInRange = () => {
@@ -169,6 +190,7 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
         // Daily Transaction
         const payRows: string[][] = [];
         let paySum = 0;
+        let payDiscountSum = 0;
         let sl = 1;
         pays.forEach((p) => {
           payRows.push([
@@ -178,9 +200,11 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
             p.remark || '—',
             p.method,
             formatMoney(p.amount),
+            (p.discount || 0) > 0 ? formatMoney(p.discount || 0) : '0.00',
             formatMoney(StorageService.getCustomerBalance(p.custId)),
           ]);
-          paySum += p.amount;
+          paySum += p.amount || 0;
+          payDiscountSum += p.discount || 0;
         });
 
         const invRows: string[][] = [];
@@ -232,9 +256,9 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
           blocks: [
             {
               caption: 'টাকা জমার তালিকা (Pay Receipts)',
-              heads: ['SL', 'Receipt', 'গ্রাহকের নাম', 'মন্তব্য', 'মাধ্যম', 'জমা (৳)', 'বর্তমান বাকি'],
+              heads: ['SL', 'Receipt', 'গ্রাহকের নাম', 'মন্তব্য', 'মাধ্যম', 'জমা (৳)', 'ডিসকাউন্ট (৳)', 'বর্তমান বাকি'],
               rows: payRows,
-              total: ['', '', '', '', 'মোট জমা =', `৳ ${formatMoney(paySum)}`, ''],
+              total: ['', '', '', '', 'মোট =', `৳ ${formatMoney(paySum)}`, `৳ ${formatMoney(payDiscountSum)}`, ''],
             },
             {
               caption: 'দৈনিক বিক্রয় চালান (Daily Invoices)',
@@ -417,7 +441,7 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
           }
         });
 
-        // 3. Separate payment receipts (Credit)
+        // 3. Separate payment receipts (Credit — including Discount)
         const custPays = payments.filter((p) => p.custId === targetCust.id);
         custPays.forEach((p) => {
           if (dateFrom && p.date && p.date.slice(0, 10) < dateFrom) return;
@@ -425,16 +449,31 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
 
           const invMatch = p.remark?.match(/\d{4,}/)?.[0] || '';
 
-          txList.push({
-            sl: 0,
-            invoiceNo: invMatch,
-            payDate: formatDateDDMMYY(p.date),
-            rawDate: p.date || '',
-            paymentType: p.method === 'Bank' ? 'Bank Deposit' : p.method === 'Bkash' ? 'bKash Deposit' : 'Cash Deposit',
-            particulars: p.remark ? p.remark : invMatch ? `(${invMatch}) Cash in Hand` : 'Cash in Hand',
-            debit: 0,
-            credit: p.amount || 0,
-          });
+          if ((p.amount || 0) > 0) {
+            txList.push({
+              sl: 0,
+              invoiceNo: invMatch,
+              payDate: formatDateDDMMYY(p.date),
+              rawDate: p.date || '',
+              paymentType: p.method === 'Bank' ? 'Bank Deposit' : p.method === 'Bkash' ? 'bKash Deposit' : 'Cash Deposit',
+              particulars: p.remark ? p.remark : invMatch ? `(${invMatch}) Cash in Hand` : 'Cash in Hand',
+              debit: 0,
+              credit: p.amount || 0,
+            });
+          }
+
+          if ((p.discount || 0) > 0) {
+            txList.push({
+              sl: 0,
+              invoiceNo: invMatch,
+              payDate: formatDateDDMMYY(p.date),
+              rawDate: p.date || '',
+              paymentType: 'Discount',
+              particulars: p.remark ? `Discount: ${p.remark}` : 'Pay Receipt Discount (ছাড়)',
+              debit: 0,
+              credit: p.discount || 0,
+            });
+          }
         });
 
         // Sort chronologically
@@ -737,6 +776,115 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
         };
       }
 
+      case 8: {
+        // 9. Dealer Wise Due list
+        const dealerMap = new Map<
+          string,
+          {
+            dealerLabel: string;
+            items: Array<{ lastPayDate: string; lastPayTs: number; custName: string; due: number }>;
+          }
+        >();
+
+        const filterDealerLower = selectedDealer.trim().toLowerCase();
+
+        customers.forEach((cust) => {
+          const due = StorageService.getCustomerBalance(cust.id);
+          if (due <= 0) return;
+
+          // Resolve Deal name from Customer profile, or fall back to customer's latest invoice Deal
+          let dealerName = (cust.deal || '').trim();
+          const custInvoicesDesc = invoices
+            .filter((v) => v.custId === cust.id)
+            .sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : b.no - a.no));
+
+          if (!dealerName) {
+            const invWithDeal = custInvoicesDesc.find((v) => v.deal && v.deal.trim().length > 0);
+            if (invWithDeal) dealerName = invWithDeal.deal.trim();
+          }
+
+          if (!dealerName) return;
+          if (filterDealerLower && dealerName.toLowerCase() !== filterDealerLower) return;
+
+          // Find latest payment date (from Pay Receipts or paid Invoice)
+          let latestDateStr = '';
+          let latestTs = 0;
+
+          payments
+            .filter((p) => p.custId === cust.id && ((p.amount || 0) > 0 || (p.discount || 0) > 0))
+            .forEach((p) => {
+              const t = parseLocalDateTime(p.date).getTime();
+              if (!isNaN(t) && t >= latestTs) {
+                latestTs = t;
+                latestDateStr = p.date;
+              } else if (!latestDateStr && p.date) {
+                latestDateStr = p.date;
+              }
+            });
+
+          custInvoicesDesc.forEach((inv) => {
+            const invPaid = (inv.cash || 0) + (inv.bank || 0) + (inv.bkash || 0);
+            if (invPaid > 0) {
+              const t = parseLocalDateTime(inv.date).getTime();
+              if (!isNaN(t) && t > latestTs) {
+                latestTs = t;
+                latestDateStr = inv.date;
+              } else if (!latestDateStr && inv.date) {
+                latestDateStr = inv.date;
+              }
+            }
+          });
+
+          const key = dealerName.toLowerCase();
+          if (!dealerMap.has(key)) {
+            dealerMap.set(key, { dealerLabel: dealerName, items: [] });
+          }
+          dealerMap.get(key)!.items.push({
+            lastPayDate: latestDateStr ? formatDDMMYYYY(latestDateStr) : 'জমা নেই',
+            lastPayTs: latestTs,
+            custName: cust.name,
+            due,
+          });
+        });
+
+        const sortedGroups = Array.from(dealerMap.values()).sort((a, b) =>
+          a.dealerLabel.localeCompare(b.dealerLabel)
+        );
+
+        let grandTotalDue = 0;
+        let totalDueCustomers = 0;
+
+        const blocks: ReportBlock[] = sortedGroups.map((grp) => {
+          const sortedItems = [...grp.items].sort((a, b) => b.due - a.due);
+          const groupTotal = sortedItems.reduce((s, it) => s + it.due, 0);
+          grandTotalDue += groupTotal;
+          totalDueCustomers += sortedItems.length;
+          return {
+            caption: `Dealer: ${grp.dealerLabel}`,
+            heads: ['Date', 'Customer Name', 'Due amount'],
+            rows: sortedItems.map((it) => [it.lastPayDate, it.custName, formatMoney(it.due)]),
+            total: ['', `মোট (${sortedItems.length} জন কাস্টমার) =`, `৳ ${formatMoney(groupTotal)}`],
+          };
+        });
+
+        return {
+          title: 'Dealer Wise Due List',
+          period: `তারিখ: ${formatDateBangla(getTodayLocalDateStr())}`,
+          reportType: 'dealer_due',
+          info: [
+            selectedDealer
+              ? `নির্বাচিত ডিলার: ${selectedDealer}`
+              : `সকল ডিলার (${sortedGroups.length} জন ডিলার, ${totalDueCustomers} জন বাকিদার কাস্টমার)`,
+          ],
+          blocks,
+          summary: [
+            ['মোট ডিলার (Dealers)', `${sortedGroups.length} জন`],
+            ['মোট বাকিদার কাস্টমার', `${totalDueCustomers} জন`],
+            ['সর্বমোট ডিউ (Total Due)', `৳ ${formatMoney(grandTotalDue)}`],
+          ] as Array<[string, string]>,
+        };
+      }
+
       default:
         return null;
     }
@@ -847,7 +995,7 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
           </div>
         )}
 
-        {selectedReportId === 5 && (
+        {(selectedReportId === 5 || selectedReportId === 8) && (
           <div className="space-y-1">
             <label className="font-bold text-slate-700 block">ডিলার / রেফারেন্স :</label>
             <select
@@ -855,7 +1003,9 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
               onChange={(e) => setSelectedDealer(e.target.value)}
               className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-slate-900 font-medium"
             >
-              <option value="">-- ডিলার বাছুন --</option>
+              <option value="">
+                {selectedReportId === 8 ? '-- সকল ডিলার (All Dealers) --' : '-- ডিলার বাছুন --'}
+              </option>
               {distinctDealers.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -1202,10 +1352,15 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
                 )}
 
                 {/* Blocks */}
+                {reportData?.blocks && reportData.blocks.length === 0 && reportData.reportType === 'dealer_due' && (
+                  <div className="p-8 text-center text-slate-500 border border-dashed border-slate-300 rounded mb-5">
+                    ডিল অনুযায়ী কোনো কাস্টমারের বকেয়া পাওয়া যায়নি।
+                  </div>
+                )}
                 {reportData?.blocks.map((block, bIdx) => (
                   <div key={bIdx} className="mb-5">
                     {block.caption && (
-                      <h4 className="font-bold text-slate-800 text-xs bg-slate-100 px-2 py-1 rounded-t border-t border-x border-slate-300 inline-block">
+                      <h4 className="font-bold text-slate-800 text-xs bg-slate-100 px-2.5 py-1 rounded-t border-t border-x border-slate-300 inline-block">
                         {block.caption}
                       </h4>
                     )}
@@ -1222,34 +1377,50 @@ export const SalesReportView: React.FC<SalesReportViewProps> = ({
                       <tbody className="divide-y divide-slate-200">
                         {block.rows.map((row, rIdx) => (
                           <tr key={rIdx} className="hover:bg-slate-50">
-                            {row.map((cell, cIdx) => (
-                              <td
-                                key={cIdx}
-                                className={`border border-slate-200 p-1.5 ${
-                                  cIdx === 0
-                                    ? 'text-center font-mono w-10 text-slate-500'
-                                    : cIdx >= row.length - 2
-                                    ? 'text-right font-mono font-medium'
-                                    : 'text-left'
-                                }`}
-                              >
-                                {cell}
-                              </td>
-                            ))}
+                            {row.map((cell, cIdx) => {
+                              const isDealerDue = reportData?.reportType === 'dealer_due';
+                              const cellAlignClass = isDealerDue
+                                ? cIdx === 0
+                                  ? 'text-center font-mono w-28 text-slate-700'
+                                  : cIdx === 1
+                                  ? 'text-left font-semibold text-slate-900'
+                                  : 'text-right font-mono font-bold text-rose-700 w-32'
+                                : cIdx === 0
+                                ? 'text-center font-mono w-10 text-slate-500'
+                                : cIdx >= row.length - 2
+                                ? 'text-right font-mono font-medium'
+                                : 'text-left';
+                              return (
+                                <td
+                                  key={cIdx}
+                                  className={`border border-slate-200 p-1.5 ${cellAlignClass}`}
+                                >
+                                  {cell}
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
                         {block.total && (
                           <tr className="bg-slate-100 font-bold border-t-2 border-slate-400">
-                            {block.total.map((tCell, tIdx) => (
-                              <td
-                                key={tIdx}
-                                className={`border border-slate-300 p-1.5 ${
-                                  tIdx >= block.total!.length - 2 ? 'text-right font-mono' : 'text-left'
-                                }`}
-                              >
-                                {tCell}
-                              </td>
-                            ))}
+                            {block.total.map((tCell, tIdx) => {
+                              const isDealerDue = reportData?.reportType === 'dealer_due';
+                              const totalAlignClass = isDealerDue
+                                ? tIdx === block.total!.length - 1
+                                  ? 'text-right font-mono text-rose-800'
+                                  : 'text-right'
+                                : tIdx >= block.total!.length - 2
+                                ? 'text-right font-mono'
+                                : 'text-left';
+                              return (
+                                <td
+                                  key={tIdx}
+                                  className={`border border-slate-300 p-1.5 ${totalAlignClass}`}
+                                >
+                                  {tCell}
+                                </td>
+                              );
+                            })}
                           </tr>
                         )}
                       </tbody>
