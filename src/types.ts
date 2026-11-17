@@ -25,6 +25,9 @@ export interface Customer {
   phone: string;
   deal: string;
   openDue: number;
+  smsOptOut?: boolean;
+  smsConsent?: boolean;
+  smsConsentUpdatedAt?: string;
 }
 
 export interface DealerDeal {
@@ -129,6 +132,8 @@ export interface StaffPermissions {
   canViewReports: boolean;         // সেলস রিপোর্ট
   canAccessSettings: boolean;      // দোকান সেটিংস
   canBackupData: boolean;          // ডাটা ব্যাকআপ
+  canSendSms?: boolean;            // গ্রাহককে SMS পাঠানো
+  canManageSmsSettings?: boolean;  // SMS গেটওয়ে ও টেমপ্লেট সেটিংস
 }
 
 export interface NoticeBanner {
@@ -212,8 +217,92 @@ export type ActiveTab =
   | 'due_list'
   | 'income_expend'
   | 'sales_report'
+  | 'sms_center'
   | 'settings'
   | 'admin_control'
   | 'data_backup'
   | 'desktop_app'
   | 'vb_code';
+
+// ================= SMS MANAGEMENT TYPES =================
+export type SmsProviderId =
+  | 'sandbox'
+  | 'bulksmsbd'
+  | 'greenweb'
+  | 'sslwireless'
+  | 'twilio'
+  | 'custom_webhook';
+
+export type SmsTriggerType = 'invoice' | 'payment' | 'due_reminder' | 'bulk' | 'custom';
+
+export type SmsDeliveryStatus =
+  | 'DELIVERED'
+  | 'SENT'
+  | 'PENDING'
+  | 'FAILED'
+  | 'SKIPPED_DUPLICATE'
+  | 'SKIPPED_OPT_OUT';
+
+export interface SmsTemplate {
+  id: string;
+  name: string;
+  triggerType: SmsTriggerType;
+  language: 'bn' | 'en';
+  body: string;
+}
+
+export interface SmsGatewaySettings {
+  smsEnabled: boolean;
+  activeProvider: SmsProviderId;
+  senderId: string;
+  costPerSms: number;
+  duplicateWindowMinutes: number;
+  requireConsent: boolean;
+  appendOptOutText: boolean;
+  customApiUrl?: string;
+  customBalanceUrl?: string;
+  customAuthHeader?: string;
+  templates: SmsTemplate[];
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface SmsLog {
+  id: number;
+  date: string; // YYYY-MM-DD HH:mm:ss
+  custId?: number;
+  custName: string;
+  phone: string;
+  triggerType: SmsTriggerType;
+  referenceNo?: string;
+  message: string;
+  provider: SmsProviderId;
+  providerMessageId?: string;
+  status: SmsDeliveryStatus;
+  deliveryStatus: 'DELIVERED' | 'SENT' | 'PENDING' | 'FAILED';
+  isUnicode: boolean;
+  parts: number;
+  cost: number;
+  sentBy: string;
+  error?: string;
+}
+
+export interface SmsRecipientPayload {
+  custId?: number;
+  custName: string;
+  phone: string;
+  smsOptOut?: boolean;
+  smsConsent?: boolean;
+  invoiceNo?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  dueAmount?: number;
+  date?: string;
+}
+
+export interface SmsComposeRequest {
+  triggerType: SmsTriggerType;
+  recipients: SmsRecipientPayload[];
+  title?: string;
+}
+

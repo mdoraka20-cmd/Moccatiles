@@ -23,8 +23,15 @@ import {
   StaffPermissions,
   NoticeBanner,
   ContactsInfo,
+  SmsGatewaySettings,
+  SmsLog,
 } from '../types';
-import { StorageService, defaultStaffPermissions, defaultContactsInfo } from './storage';
+import {
+  StorageService,
+  defaultStaffPermissions,
+  defaultContactsInfo,
+  defaultSmsSettings,
+} from './storage';
 
 // Recursively strip undefined properties so Firestore setDoc/batch.set never throws
 function sanitizeForFirestore<T>(val: T): T {
@@ -67,6 +74,8 @@ export class FirestoreSyncService {
     onStaffPermsUpdate?: (perms: StaffPermissions) => void;
     onNoticeUpdate?: (notice: NoticeBanner) => void;
     onContactsUpdate?: (contacts: ContactsInfo) => void;
+    onSmsLogsUpdate?: (logs: SmsLog[]) => void;
+    onSmsSettingsUpdate?: (settings: SmsGatewaySettings) => void;
   }) {
     if (this.isInitialized) return;
     this.isInitialized = true;
@@ -297,6 +306,43 @@ export class FirestoreSyncService {
           }
         },
         (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/contacts`)
+      );
+
+      // 14. SMS Logs Listener
+      const smsLogsPath = 'smsLogs';
+      onSnapshot(
+        collection(db, smsLogsPath),
+        (snap) => {
+          const logsList: SmsLog[] = [];
+          snap.forEach((d) => logsList.push(d.data() as SmsLog));
+          logsList.sort((a, b) => b.id - a.id);
+          StorageService.saveSmsLogs(logsList);
+          if (callbacks.onSmsLogsUpdate) callbacks.onSmsLogsUpdate(logsList);
+          StorageService.notifyUpdate();
+        },
+        (error) => handleFirestoreError(error, OperationType.LIST, smsLogsPath)
+      );
+
+      // 15. SMS Gateway Settings & Templates Listener
+      onSnapshot(
+        doc(db, metaPath, 'sms_settings'),
+        (snap) => {
+          if (snap.exists()) {
+            const data = snap.data() as SmsGatewaySettings;
+            const normalized: SmsGatewaySettings = {
+              ...defaultSmsSettings,
+              ...data,
+              templates:
+                Array.isArray(data.templates) && data.templates.length > 0
+                  ? data.templates
+                  : defaultSmsSettings.templates,
+            };
+            StorageService.saveSmsSettings(normalized);
+            if (callbacks.onSmsSettingsUpdate) callbacks.onSmsSettingsUpdate(normalized);
+            StorageService.notifyUpdate();
+          }
+        },
+        (error) => handleFirestoreError(error, OperationType.GET, `${metaPath}/sms_settings`)
       );
     };
 
@@ -735,6 +781,77 @@ export class FirestoreSyncService {
     }
   }
 
+  // Sync Single SMS Log
+  static async syncSaveSmsLog(log: SmsLog) {
+    const logs = StorageService.getSmsLogs();
+    const idx = logs.findIndex((l) => l.id === log.id);
+    if (idx >= 0) logs[idx] = log;
+    else logs.unshift(log);
+    logs.sort((a, b) => b.id - a.id);
+    StorageService.saveSmsLogs(logs);
+    StorageService.notifyUpdate();
+
+    const path = `smsLogs/${log.id}`;
+    try {
+      await setDoc(doc(db, 'smsLogs', String(log.id)), sanitizeForFirestore(log));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }
+
+  // Sync Multiple SMS Logs (Bulk SMS batch)
+  static async syncSaveSmsLogs(newLogs: SmsLog[]) {
+    if (newLogs.length === 0) return;
+    const logs = StorageService.getSmsLogs();
+    for (const log of newLogs) {
+      const idx = logs.findIndex((l) => l.id === log.id);
+      if (idx >= 0) logs[idx] = log;
+      else logs.unshift(log);
+    }
+    logs.sort((a, b) => b.id - a.id);
+    StorageService.saveSmsLogs(logs);
+    StorageService.notifyUpdate();
+
+    try {
+      for (let i = 0; i < newLogs.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = newLogs.slice(i, i + 400);
+        chunk.forEach((l) => {
+          batch.set(doc(db, 'smsLogs', String(l.id)), sanitizeForFirestore(l));
+        });
+        await batch.commit();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'smsLogs');
+    }
+  }
+
+  // Delete SMS Log
+  static async syncDeleteSmsLog(id: number) {
+    const logs = StorageService.getSmsLogs().filter((l) => l.id !== id);
+    StorageService.saveSmsLogs(logs);
+    StorageService.notifyUpdate();
+
+    const path = `smsLogs/${id}`;
+    try {
+      await deleteDoc(doc(db, 'smsLogs', String(id)));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  }
+
+  // Sync SMS Gateway Settings & Templates
+  static async syncSmsSettings(settings: SmsGatewaySettings) {
+    StorageService.saveSmsSettings(settings);
+    StorageService.notifyUpdate();
+    const path = 'metadata/sms_settings';
+    try {
+      await setDoc(doc(db, 'metadata', 'sms_settings'), sanitizeForFirestore(settings));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  }
+
   // Delete all documents inside a Firestore collection in chunks
   private static async deleteCollectionDocs(colName: string) {
     const snap = await getDocs(collection(db, colName));
@@ -762,6 +879,7 @@ export class FirestoreSyncService {
       'customers',
       'products',
       'dealers',
+      'smsLogs',
     ];
     const toWipe = wipeAll ? allTargets : targets.filter((t) => allTargets.includes(t));
 
@@ -820,6 +938,10 @@ export class FirestoreSyncService {
       }
       if (data.contactsInfo) {
         await setDoc(doc(db, 'metadata', 'contacts'), sanitizeForFirestore(StorageService.getContactsInfo()));
+      }
+      if (Array.isArray(data.smsLogs)) await writeChunked('smsLogs', data.smsLogs, (l) => String(l.id));
+      if (data.smsSettings) {
+        await setDoc(doc(db, 'metadata', 'sms_settings'), sanitizeForFirestore(StorageService.getSmsSettings()));
       }
       return true;
     } catch (err) {

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Customer, Payment } from '../types';
+import { Customer, Payment, SmsComposeRequest, StaffPermissions } from '../types';
 import { StorageService, defaultPaymentMethods } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatMoney, parseNum, getTodayLocalDateStr, getNowLocalTimeStr } from '../utils/numberWords';
-import { Receipt, Search, Printer, Trash2, Check, RotateCcw, X, Plus } from 'lucide-react';
+import { Receipt, Search, Printer, Trash2, Check, RotateCcw, X, Plus, MessageSquare } from 'lucide-react';
 
 interface PayReceiptViewProps {
   customers: Customer[];
@@ -17,7 +17,9 @@ interface PayReceiptViewProps {
   selectedCustomerFromPicker?: Customer | null;
   onClearCustomerPicker: () => void;
   currentUser?: any;
+  permissions?: StaffPermissions;
   onRequireAdminAuth?: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
+  onOpenSmsComposer?: (req: SmsComposeRequest) => void;
 }
 
 const getMethodDisplayLabel = (m: string): string => {
@@ -38,8 +40,12 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
   onOpenCustomerPicker,
   selectedCustomerFromPicker,
   onClearCustomerPicker,
+  currentUser,
+  permissions,
   onRequireAdminAuth,
+  onOpenSmsComposer,
 }) => {
+  const canSendSms = currentUser?.role !== 'staff' || permissions?.canSendSms !== false;
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
   const [payDate, setPayDate] = useState<string>(() => getTodayLocalDateStr());
   const [amount, setAmount] = useState<string>('');
@@ -47,6 +53,7 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
   const [method, setMethod] = useState<string>('Cash');
   const [remark, setRemark] = useState<string>('');
   const [selectedPay, setSelectedPay] = useState<Payment | null>(null);
+  const [lastSavedPayment, setLastSavedPayment] = useState<Payment | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Custom payment methods management state
@@ -206,11 +213,37 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
     };
 
     onSavePayment(newPayment, print);
+    setLastSavedPayment(newPayment);
     setAmount('');
     setDiscount('');
     setRemark('');
     setStatusMsg({ text: `রশিদ #${newPayment.id} সফলভাবে সংরক্ষিত হয়েছে!`, type: 'success' });
-    setTimeout(() => setStatusMsg(null), 4000);
+    setTimeout(() => setStatusMsg(null), 5000);
+  };
+
+  const handleTriggerPaymentSms = (p: Payment) => {
+    if (!onOpenSmsComposer) return;
+    const cust = customers.find((c) => c.id === p.custId);
+    const liveBalance = StorageService.getCustomerBalance(p.custId);
+    const prevPlusPaid = Math.max(0, liveBalance + p.amount + (p.discount || 0));
+    onOpenSmsComposer({
+      triggerType: 'payment',
+      title: `জমা রশিদ #${p.id} — SMS পাঠান`,
+      recipients: [
+        {
+          custId: p.custId,
+          custName: p.custName,
+          phone: cust?.phone || '',
+          invoiceNo: `Receipt #${p.id}`,
+          totalAmount: prevPlusPaid,
+          paidAmount: p.amount,
+          dueAmount: liveBalance,
+          date: p.date?.slice(0, 10) || getTodayLocalDateStr(),
+          smsOptOut: cust?.smsOptOut,
+          smsConsent: cust?.smsConsent,
+        },
+      ],
+    });
   };
 
   return (
@@ -483,6 +516,20 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
             <Printer className="w-4 h-4" />
             Save + Print Receipt (রশিদসহ সংরক্ষণ)
           </button>
+          {onOpenSmsComposer && canSendSms && (lastSavedPayment || selectedPay) && (
+            <button
+              type="button"
+              onClick={() => {
+                const target = lastSavedPayment || selectedPay;
+                if (target) handleTriggerPaymentSms(target);
+              }}
+              className="px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
+              title="জমার কনফার্মেশন ও অবশিষ্ট বাকি SMS পাঠান"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Send SMS (রশিদ #{(lastSavedPayment || selectedPay)?.id})
+            </button>
+          )}
         </div>
       </div>
 
@@ -625,7 +672,20 @@ export const PayReceiptView: React.FC<PayReceiptViewProps> = ({
                     </td>
                     <td className="p-2 text-slate-600">{p.remark || '—'}</td>
                     <td className="p-2 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
+                      <div className="flex items-center justify-center gap-1">
+                        {onOpenSmsComposer && canSendSms && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTriggerPaymentSms(p);
+                            }}
+                            title="জমার SMS পাঠান"
+                            className="p-1 text-sky-700 hover:text-sky-900 hover:bg-sky-100 rounded cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

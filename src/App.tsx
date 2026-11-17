@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ActiveTab, AppUser, ContactsInfo, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, ShopConfig, StockInRecord, Txn, StaffPermissions } from './types';
+import { ActiveTab, AppUser, ContactsInfo, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, ShopConfig, SmsComposeRequest, SmsGatewaySettings, SmsLog, StockInRecord, Txn, StaffPermissions } from './types';
 import { StorageService } from './services/storage';
 import { HeaderToolbar } from './components/HeaderToolbar';
 import { DashboardView } from './components/DashboardView';
@@ -12,6 +12,8 @@ import { PayReceiptView } from './components/PayReceiptView';
 import { DueListView } from './components/DueListView';
 import { IncomeExpenseView } from './components/IncomeExpenseView';
 import { SalesReportView } from './components/SalesReportView';
+import { SmsCenterView } from './components/SmsCenterView';
+import { SmsComposerModal } from './components/SmsComposerModal';
 import { SettingsView } from './components/SettingsView';
 import { DataBackupView } from './components/DataBackupView';
 import { VbCodeModal } from './components/VbCodeModal';
@@ -84,6 +86,15 @@ export default function App() {
   const [paymentMethods, setPaymentMethods] = useState<string[]>(() => StorageService.getPaymentMethods());
   const [notice, setNotice] = useState<NoticeBanner>(() => StorageService.getNotice());
   const [contactsInfo, setContactsInfo] = useState<ContactsInfo>(() => StorageService.getContactsInfo());
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>(() => StorageService.getSmsLogs());
+  const [smsSettings, setSmsSettings] = useState<SmsGatewaySettings>(() => StorageService.getSmsSettings());
+  const [smsComposerState, setSmsComposerState] = useState<{
+    isOpen: boolean;
+    request: SmsComposeRequest | null;
+  }>({
+    isOpen: false,
+    request: null,
+  });
 
   // Customer modal picker state
   const [isCustomerPickerOpen, setIsCustomerPickerOpen] = useState(false);
@@ -185,6 +196,8 @@ export default function App() {
       onStaffPermsUpdate: (perms) => setStaffPermissions(perms),
       onNoticeUpdate: (newNotice) => setNotice(newNotice),
       onContactsUpdate: (newContacts) => setContactsInfo(newContacts),
+      onSmsLogsUpdate: (newLogs) => setSmsLogs(newLogs),
+      onSmsSettingsUpdate: (newSettings) => setSmsSettings(newSettings),
     });
 
     return () => clearInterval(interval);
@@ -202,6 +215,8 @@ export default function App() {
     setPaymentMethods(StorageService.getPaymentMethods());
     setNotice(StorageService.getNotice());
     setContactsInfo(StorageService.getContactsInfo());
+    setSmsLogs(StorageService.getSmsLogs());
+    setSmsSettings(StorageService.getSmsSettings());
     if (StorageService.isUserLoggedIn()) {
       setCurrentUser(StorageService.getCurrentUser());
     }
@@ -395,6 +410,7 @@ export default function App() {
       if (tab === 'payment' && staffPermissions.canRecordPayment === false) return;
       if (tab === 'income_expend' && staffPermissions.canManageExpenses === false) return;
       if (tab === 'sales_report' && staffPermissions.canViewReports === false) return;
+      if (tab === 'sms_center' && staffPermissions.canSendSms === false) return;
       if (tab === 'settings' && staffPermissions.canAccessSettings === false) return;
       if (tab === 'data_backup' && staffPermissions.canBackupData === false) return;
     }
@@ -468,6 +484,7 @@ export default function App() {
             onUpdateInvoiceDeal={handleUpdateInvoiceDeal}
             onNavigateToStock={() => setActiveTab('stock_inventory')}
             onRequireAdminAuth={requestAdminAction}
+            onOpenSmsComposer={(req) => setSmsComposerState({ isOpen: true, request: req })}
           />
         )}
 
@@ -529,6 +546,8 @@ export default function App() {
             selectedCustomerFromPicker={selectedPickedCustomer}
             onClearCustomerPicker={() => setSelectedPickedCustomer(null)}
             onRequireAdminAuth={requestAdminAction}
+            permissions={staffPermissions}
+            onOpenSmsComposer={(req) => setSmsComposerState({ isOpen: true, request: req })}
           />
         )}
 
@@ -537,10 +556,13 @@ export default function App() {
             customers={customers}
             invoices={invoices}
             payments={payments}
+            currentUser={currentUser}
+            permissions={staffPermissions}
             onSelectCustomerForPayment={(cust) => {
               setSelectedPickedCustomer(cust);
             }}
             onNavigateToPayment={() => setActiveTab('payment')}
+            onOpenSmsComposer={(req) => setSmsComposerState({ isOpen: true, request: req })}
           />
         )}
 
@@ -572,6 +594,30 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'sms_center' && (
+          <SmsCenterView
+            customers={customers}
+            smsLogs={smsLogs}
+            smsSettings={smsSettings}
+            shop={shop}
+            currentUser={currentUser}
+            permissions={staffPermissions}
+            onOpenSmsComposer={(req) => setSmsComposerState({ isOpen: true, request: req })}
+            onSaveCustomer={handleSaveCustomer}
+            onUpdateSmsSettings={(updated) => {
+              setSmsSettings(updated);
+              StorageService.saveSmsSettings(updated);
+              FirestoreSyncService.syncSmsSettings(updated).catch(console.error);
+            }}
+            onDeleteSmsLog={(id) => {
+              const updated = StorageService.getSmsLogs().filter((l) => l.id !== id);
+              setSmsLogs(updated);
+              StorageService.saveSmsLogs(updated);
+              FirestoreSyncService.syncDeleteSmsLog(id).catch(console.error);
+            }}
+          />
+        )}
+
         {activeTab === 'admin_control' && currentUser.role === 'admin' && (
           <AdminControlView
             currentUser={currentUser}
@@ -593,6 +639,14 @@ export default function App() {
               setContactsInfo(updatedContacts);
               FirestoreSyncService.syncContactsInfo(updatedContacts).catch(console.error);
             }}
+            shop={shop}
+            smsSettings={smsSettings}
+            onUpdateSmsSettings={(updated) => {
+              setSmsSettings(updated);
+              StorageService.saveSmsSettings(updated);
+              FirestoreSyncService.syncSmsSettings(updated).catch(console.error);
+            }}
+            onOpenSmsCenter={() => setActiveTab('sms_center')}
             onDeletePendingChallan={handleDeleteInvoice}
             onDeleteDeliveryChallan={handleDeleteDeliveryChallan}
             onDataChanged={refreshAllData}
@@ -669,6 +723,7 @@ export default function App() {
                 (activeTab === 'payment' && latestPerms.canRecordPayment === false) ||
                 (activeTab === 'income_expend' && latestPerms.canManageExpenses === false) ||
                 (activeTab === 'sales_report' && latestPerms.canViewReports === false) ||
+                (activeTab === 'sms_center' && latestPerms.canSendSms === false) ||
                 (activeTab === 'settings' && latestPerms.canAccessSettings === false) ||
                 (activeTab === 'data_backup' && latestPerms.canBackupData === false)
               ) {
@@ -701,6 +756,21 @@ export default function App() {
           stockInRecord={printModal.stockInRecord}
           shop={shop}
           onClose={() => setPrintModal({ isOpen: false, type: 'invoice' })}
+        />
+      )}
+
+      {/* Universal SMS Composer & Live Preview Modal */}
+      {smsComposerState.isOpen && (
+        <SmsComposerModal
+          isOpen={smsComposerState.isOpen}
+          request={smsComposerState.request}
+          shop={shop}
+          smsLogs={smsLogs}
+          smsSettings={smsSettings}
+          customers={customers}
+          currentUser={currentUser}
+          onClose={() => setSmsComposerState({ isOpen: false, request: null })}
+          onLogsCreated={() => setSmsLogs(StorageService.getSmsLogs())}
         />
       )}
     </div>

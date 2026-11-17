@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Customer, DealerDeal, Invoice, Item, Product, ShopConfig, AppUser, StaffPermissions } from '../types';
+import { Customer, DealerDeal, Invoice, Item, Product, ShopConfig, AppUser, StaffPermissions, SmsComposeRequest } from '../types';
 import { StorageService } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
 import { formatMoney, formatQty, parseNum, getTodayLocalDateStr, getNowLocalTimeStr } from '../utils/numberWords';
@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   ShieldAlert,
   AlertTriangle,
+  MessageSquare,
 } from 'lucide-react';
 import { ProductSearchSelect } from './ProductSearchSelect';
 
@@ -43,6 +44,7 @@ interface OrderViewProps {
   currentUser?: AppUser;
   permissions?: StaffPermissions;
   onRequireAdminAuth?: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
+  onOpenSmsComposer?: (req: SmsComposeRequest) => void;
 }
 
 export const OrderView: React.FC<OrderViewProps> = ({
@@ -62,7 +64,9 @@ export const OrderView: React.FC<OrderViewProps> = ({
   currentUser,
   permissions,
   onRequireAdminAuth,
+  onOpenSmsComposer,
 }) => {
+  const canSendSms = currentUser?.role !== 'staff' || permissions?.canSendSms !== false;
   // Order Header state
   const [editingNo, setEditingNo] = useState<number>(0);
   const [invoiceNo, setInvoiceNo] = useState<number>(0);
@@ -183,6 +187,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
   // Status & item warning messages
   const [statusMsg, setStatusMsg] = useState<string>('');
   const [itemWarningMsg, setItemWarningMsg] = useState<string>('');
+  const [lastSavedInvoice, setLastSavedInvoice] = useState<Invoice | null>(null);
 
   // Right-side list state (defaults to current date's memos)
   const [selectedRightInvoice, setSelectedRightInvoice] = useState<Invoice | null>(null);
@@ -556,6 +561,7 @@ export const OrderView: React.FC<OrderViewProps> = ({
     };
 
     onSaveInvoice(inv, printKind);
+    setLastSavedInvoice(inv);
     setStatusMsg(`Invoice #${inv.no} সংরক্ষিত হয়েছে! ${sendToDeliveryQueue ? 'চালান ডেলিভারি কিউতে পাঠানো হয়েছে।' : ''}`);
     setTimeout(() => setStatusMsg(''), 4000);
     resetForm();
@@ -565,6 +571,34 @@ export const OrderView: React.FC<OrderViewProps> = ({
         onNavigateToStock();
       }, 500);
     }
+  };
+
+  const handleTriggerInvoiceSms = (inv: Invoice) => {
+    if (!onOpenSmsComposer) return;
+    const matchedCust = customers.find((c) => c.id === inv.custId);
+    const lsum = inv.items.reduce((s, it) => s + (it.total || 0), 0);
+    const totalAmount = lsum + (inv.labor || 0) - (inv.discount || 0);
+    const paidAmount = (inv.cash || 0) + (inv.bank || 0) + (inv.bkash || 0);
+    const dueAmount = totalAmount + (inv.prevDue || 0) - paidAmount;
+
+    onOpenSmsComposer({
+      triggerType: 'invoice',
+      title: `ইনভয়েস #${inv.no} — SMS পাঠান`,
+      recipients: [
+        {
+          custId: inv.custId,
+          custName: inv.custName,
+          phone: inv.phone || matchedCust?.phone || '',
+          invoiceNo: String(inv.no),
+          totalAmount,
+          paidAmount,
+          dueAmount,
+          date: inv.date?.slice(0, 10) || getTodayLocalDateStr(),
+          smsOptOut: matchedCust?.smsOptOut,
+          smsConsent: matchedCust?.smsConsent,
+        },
+      ],
+    });
   };
 
   // Load existing invoice for editing
@@ -1131,6 +1165,52 @@ export const OrderView: React.FC<OrderViewProps> = ({
                 চালান মুছুন (Delete)
               </button>
             )}
+            {onOpenSmsComposer && canSendSms && (editingNo > 0 || lastSavedInvoice || (custName.trim() && lines.length > 0)) && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingNo > 0) {
+                    const liveInv = invoices.find((i) => i.no === editingNo);
+                    if (liveInv) {
+                      handleTriggerInvoiceSms(liveInv);
+                      return;
+                    }
+                  }
+                  if (lines.length > 0 && custName.trim()) {
+                    const matchedCust = custId ? customers.find((c) => String(c.id) === custId) : undefined;
+                    onOpenSmsComposer({
+                      triggerType: 'invoice',
+                      title: `ইনভয়েস #${invoiceNo} — SMS পাঠান`,
+                      recipients: [
+                        {
+                          custId: matchedCust?.id,
+                          custName: custName.trim(),
+                          phone: phone.trim() || matchedCust?.phone || '',
+                          invoiceNo: String(invoiceNo),
+                          totalAmount: subTotal2,
+                          paidAmount: totalPaid,
+                          dueAmount: dueBalance,
+                          date: salesDate,
+                          smsOptOut: matchedCust?.smsOptOut,
+                          smsConsent: matchedCust?.smsConsent,
+                        },
+                      ],
+                    });
+                  } else if (lastSavedInvoice) {
+                    handleTriggerInvoiceSms(lastSavedInvoice);
+                  }
+                }}
+                className="px-3.5 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
+                title="গ্রাহকের মোবাইলে ইনভয়েস SMS পাঠান"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                {lines.length > 0 && custName.trim()
+                  ? `Send SMS (#${invoiceNo})`
+                  : lastSavedInvoice
+                  ? `Send SMS (#${lastSavedInvoice.no})`
+                  : 'Send SMS'}
+              </button>
+            )}
             <div className="ml-auto flex items-center gap-2 text-slate-600 font-semibold text-xs">
               <span>মোট Sft:</span>
               <span className="font-mono font-bold text-slate-900 bg-slate-200 px-2 py-0.5 rounded">
@@ -1602,6 +1682,20 @@ export const OrderView: React.FC<OrderViewProps> = ({
               <Truck className="w-3.5 h-3.5" />
               চালান প্রিন্ট (Challan)
             </button>
+            {onOpenSmsComposer && canSendSms && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedRightInvoice) handleTriggerInvoiceSms(selectedRightInvoice);
+                }}
+                disabled={!selectedRightInvoice}
+                className="px-3 py-1.5 bg-sky-700 hover:bg-sky-600 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
+                title="নির্বাচিত ইনভয়েসের গ্রাহককে SMS পাঠান"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                SMS
+              </button>
+            )}
             <button
               onClick={() => {
                 if (!selectedRightInvoice) return;

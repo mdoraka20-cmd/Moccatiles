@@ -36,6 +36,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
   const [phone, setPhone] = useState('');
   const [deal, setDeal] = useState('');
   const [openDue, setOpenDue] = useState('0');
+  const [smsConsent, setSmsConsent] = useState(true);
+  const [smsOptOut, setSmsOptOut] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -132,6 +134,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
     setPhone(cust.phone);
     setDeal(cust.deal);
     setOpenDue(String(cust.openDue || 0));
+    setSmsConsent(cust.smsConsent !== false);
+    setSmsOptOut(cust.smsOptOut === true);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
     setStatusMsg(null);
@@ -152,6 +156,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
     setPhone('');
     setDeal('');
     setOpenDue('0');
+    setSmsConsent(true);
+    setSmsOptOut(false);
     setShowNameSuggestions(false);
     setShowPhoneSuggestions(false);
     setStatusMsg(null);
@@ -180,6 +186,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
       phone: phone.trim(),
       deal: trimmedDeal,
       openDue: parseNum(openDue),
+      smsConsent,
+      smsOptOut,
+      smsConsentUpdatedAt: new Date().toISOString().slice(0, 10),
     };
 
     onSaveCustomer(cust);
@@ -479,6 +488,28 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
               className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5 font-mono text-rose-700 font-bold"
             />
           </div>
+
+          <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap items-center gap-4 bg-slate-50 border border-slate-200 rounded px-3 py-2">
+            <span className="font-bold text-slate-700">SMS অনুমতি ও অপ্ট-আউট:</span>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={smsConsent}
+                onChange={(e) => setSmsConsent(e.target.checked)}
+                className="w-4 h-4 accent-emerald-700 cursor-pointer"
+              />
+              <span className="font-semibold text-emerald-800">গ্রাহক SMS পাওয়ার সম্মতি দিয়েছেন (Consent)</span>
+            </label>
+            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={smsOptOut}
+                onChange={(e) => setSmsOptOut(e.target.checked)}
+                className="w-4 h-4 accent-rose-600 cursor-pointer"
+              />
+              <span className="font-semibold text-rose-700">SMS পাঠানো বন্ধ রাখুন (Opt-Out)</span>
+            </label>
+          </div>
         </div>
 
         {/* Name-match warning & status message */}
@@ -612,7 +643,14 @@ export const CustomerView: React.FC<CustomerViewProps> = ({
                     }`}
                   >
                     <td className="p-2 text-center font-mono font-bold text-slate-700">{cust.id}</td>
-                    <td className="p-2 font-semibold text-slate-900">{cust.name}</td>
+                    <td className="p-2 font-semibold text-slate-900">
+                      <span>{cust.name}</span>
+                      {cust.smsOptOut && (
+                        <span className="ml-1.5 px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 border border-rose-200 text-[9px] font-bold">
+                          SMS Opt-Out
+                        </span>
+                      )}
+                    </td>
                     <td className="p-2 text-slate-600">{cust.address || '—'}</td>
                     <td className="p-2 font-mono text-slate-700">{cust.phone || '—'}</td>
                     <td className="p-2 text-slate-600">{cust.deal || '—'}</td>

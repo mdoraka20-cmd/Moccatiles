@@ -15,8 +15,11 @@ import {
   StaffPermissions,
   NoticeBanner,
   ContactsInfo,
+  SmsGatewaySettings,
+  SmsLog,
 } from '../types';
 import { getTodayLocalDateStr } from '../utils/numberWords';
+import { DEFAULT_SMS_TEMPLATES } from '../utils/smsUtils';
 
 const STORAGE_KEYS = {
   PRODUCTS: 'tiles_billing_products_v2',
@@ -37,9 +40,22 @@ const STORAGE_KEYS = {
   PAYMENT_METHODS: 'tiles_billing_payment_methods_v2',
   NOTICE: 'tiles_billing_notice_v2',
   CONTACTS: 'tiles_billing_contacts_v2',
+  SMS_LOGS: 'tiles_billing_sms_logs_v2',
+  SMS_SETTINGS: 'tiles_billing_sms_settings_v2',
 };
 
 export const defaultPaymentMethods: string[] = ['Cash', 'Bank', 'Bkash'];
+
+export const defaultSmsSettings: SmsGatewaySettings = {
+  smsEnabled: true,
+  activeProvider: 'sandbox',
+  senderId: 'MOCCATILES',
+  costPerSms: 0.35,
+  duplicateWindowMinutes: 5,
+  requireConsent: false,
+  appendOptOutText: false,
+  templates: DEFAULT_SMS_TEMPLATES,
+};
 
 export const defaultContactsInfo: ContactsInfo = {
   companyName: 'Os Technology',
@@ -92,6 +108,8 @@ export const defaultStaffPermissions: StaffPermissions = {
   canViewReports: true,
   canAccessSettings: false,
   canBackupData: false,
+  canSendSms: true,
+  canManageSmsSettings: false,
 };
 
 export const defaultShopConfig: ShopConfig = {
@@ -666,6 +684,45 @@ export class StorageService {
 
   static saveContactsInfo(contacts: ContactsInfo) {
     localStorage.setItem(STORAGE_KEYS.CONTACTS, JSON.stringify(contacts));
+  }
+
+  // SMS Settings & Templates
+  static getSmsSettings(): SmsGatewaySettings {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SMS_SETTINGS);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return {
+          ...defaultSmsSettings,
+          ...parsed,
+          templates:
+            Array.isArray(parsed.templates) && parsed.templates.length > 0
+              ? parsed.templates
+              : defaultSmsSettings.templates,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { ...defaultSmsSettings };
+  }
+
+  static saveSmsSettings(settings: SmsGatewaySettings) {
+    localStorage.setItem(STORAGE_KEYS.SMS_SETTINGS, JSON.stringify(settings));
+  }
+
+  // SMS Logs & Delivery Reports
+  static getSmsLogs(): SmsLog[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SMS_LOGS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  static saveSmsLogs(logs: SmsLog[]) {
+    localStorage.setItem(STORAGE_KEYS.SMS_LOGS, JSON.stringify(logs));
   }
 
   // Categories Master Management
@@ -1328,6 +1385,11 @@ export class StorageService {
     return challans.length === 0 ? 1 : Math.max(...challans.map((ch) => ch.id)) + 1;
   }
 
+  static nextSmsLogId(): number {
+    const logs = this.getSmsLogs();
+    return logs.length === 0 ? 1 : Math.max(...logs.map((l) => l.id)) + 1;
+  }
+
   // Full export as JSON
   static exportAllAsJSON(): string {
     const data = {
@@ -1347,6 +1409,8 @@ export class StorageService {
       staffPermissions: this.getStaffPermissions(),
       notice: this.getNotice(),
       contactsInfo: this.getContactsInfo(),
+      smsSettings: this.getSmsSettings(),
+      smsLogs: this.getSmsLogs(),
       exportedAt: new Date().toISOString(),
     };
     return JSON.stringify(data, null, 2);
@@ -1372,6 +1436,8 @@ export class StorageService {
       if (data.staffPermissions) this.saveStaffPermissions(data.staffPermissions);
       if (data.notice) this.saveNotice(data.notice);
       if (data.contactsInfo) this.saveContactsInfo(data.contactsInfo);
+      if (data.smsSettings) this.saveSmsSettings(data.smsSettings);
+      if (Array.isArray(data.smsLogs)) this.saveSmsLogs(data.smsLogs);
       return true;
     } catch (e) {
       console.error('Import failed', e);
@@ -1390,6 +1456,7 @@ export class StorageService {
     if (wipeAll || targets.includes('customers')) this.saveCustomers([]);
     if (wipeAll || targets.includes('products')) this.saveProducts([]);
     if (wipeAll || targets.includes('dealers')) this.saveDealers([]);
+    if (wipeAll || targets.includes('smsLogs')) this.saveSmsLogs([]);
   }
 
   // Reset to default sample data

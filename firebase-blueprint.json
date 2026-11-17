@@ -52,7 +52,10 @@
         "address": { "type": "string", "description": "Customer address" },
         "phone": { "type": "string", "description": "Contact phone" },
         "deal": { "type": "string", "description": "Dealer or deal contact" },
-        "openDue": { "type": "number", "description": "Opening due balance" }
+        "openDue": { "type": "number", "description": "Opening due balance" },
+        "smsOptOut": { "type": "boolean", "description": "Whether customer opted out of SMS" },
+        "smsConsent": { "type": "boolean", "description": "Whether customer consented to SMS notifications" },
+        "smsConsentUpdatedAt": { "type": "string", "description": "Timestamp of last SMS consent/opt-out change" }
       },
       "required": ["id", "name"]
     },
@@ -194,8 +197,44 @@
         "phones": { "type": "string", "description": "Support phone/whatsapp numbers shown in Dashboard Contacts" },
         "serviceMessage": { "type": "string", "description": "Admin-controlled service validity / server fee notice message" },
         "updatedAt": { "type": "string", "description": "Last update timestamp" },
-        "updatedBy": { "type": "string", "description": "Admin who updated the metadata" }
+        "updatedBy": { "type": "string", "description": "Admin who updated the metadata" },
+        "smsEnabled": { "type": "boolean", "description": "Global SMS master toggle" },
+        "activeProvider": { "type": "string", "description": "Selected SMS gateway provider ID" },
+        "senderId": { "type": "string", "description": "SMS masking/sender ID" },
+        "costPerSms": { "type": "number", "description": "Estimated cost per SMS segment" },
+        "duplicateWindowMinutes": { "type": "number", "description": "Duplicate SMS prevention cooldown window in minutes" },
+        "requireConsent": { "type": "boolean", "description": "Whether explicit customer consent is required before sending SMS" },
+        "appendOptOutText": { "type": "boolean", "description": "Whether to append opt-out instruction footer" },
+        "customApiUrl": { "type": "string", "description": "Non-secret custom SMS gateway endpoint URL" },
+        "customBalanceUrl": { "type": "string", "description": "Non-secret custom SMS gateway balance URL" },
+        "customAuthHeader": { "type": "string", "description": "HTTP header name used for backend env API key" },
+        "templates": { "type": "array", "description": "Configurable Bangla/English SMS templates" }
       }
+    },
+    "SmsLog": {
+      "title": "SmsLog",
+      "description": "SMS send history, delivery report, failed SMS record, and SMS cost tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Unique SMS log ID" },
+        "date": { "type": "string", "description": "Timestamp of SMS dispatch" },
+        "custId": { "type": "number", "description": "Customer ID if linked" },
+        "custName": { "type": "string", "description": "Recipient customer name" },
+        "phone": { "type": "string", "description": "Normalized recipient phone number" },
+        "triggerType": { "type": "string", "description": "Trigger source: invoice, payment, due_reminder, bulk, custom" },
+        "referenceNo": { "type": "string", "description": "Linked invoice or receipt number" },
+        "message": { "type": "string", "description": "Rendered SMS content (Bangla/English Unicode)" },
+        "provider": { "type": "string", "description": "Gateway provider ID used" },
+        "providerMessageId": { "type": "string", "description": "Gateway message reference ID" },
+        "status": { "type": "string", "description": "Dispatch status: SENT, DELIVERED, FAILED, SKIPPED_DUPLICATE, SKIPPED_OPT_OUT" },
+        "deliveryStatus": { "type": "string", "description": "Gateway delivery report status" },
+        "isUnicode": { "type": "boolean", "description": "Whether message used Unicode encoding" },
+        "parts": { "type": "number", "description": "Number of SMS segments" },
+        "cost": { "type": "number", "description": "Computed SMS cost" },
+        "sentBy": { "type": "string", "description": "User who triggered SMS" },
+        "error": { "type": "string", "description": "Failure reason if failed or blocked" }
+      },
+      "required": ["id", "phone", "message", "status"]
     }
   },
   "firestore": {
@@ -241,7 +280,11 @@
     },
     "/metadata/{metaId}": {
       "schema": "MetadataDoc",
-      "description": "System lookup lists and permissions"
+      "description": "System lookup lists, SMS settings, templates, and permissions"
+    },
+    "/smsLogs/{logId}": {
+      "schema": "SmsLog",
+      "description": "SMS send history, delivery reports, failure reasons, and cost tracking"
     }
   }
 }

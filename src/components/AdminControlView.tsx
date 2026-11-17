@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { AppUser, ContactsInfo, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, Txn, UserRole, StaffPermissions } from '../types';
+import { AppUser, ContactsInfo, Customer, DealerDeal, DeliveryChallan, Invoice, NoticeBanner, Payment, Product, ShopConfig, SmsGatewaySettings, Txn, UserRole, StaffPermissions } from '../types';
 import { StorageService, defaultStaffPermissions, defaultContactsInfo } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
+import { AdminSmsApiPanel } from './AdminSmsApiPanel';
 import { getTodayLocalDateStr, getNowLocalDateTimeStr } from '../utils/numberWords';
 import {
   ShieldCheck,
@@ -27,6 +28,7 @@ import {
   Upload,
   Megaphone,
   Power,
+  MessageSquare,
 } from 'lucide-react';
 
 interface AdminControlViewProps {
@@ -43,6 +45,10 @@ interface AdminControlViewProps {
   onUpdateNotice?: (notice: NoticeBanner) => void;
   contactsInfo?: ContactsInfo;
   onUpdateContacts?: (contacts: ContactsInfo) => void;
+  shop?: ShopConfig;
+  smsSettings?: SmsGatewaySettings;
+  onUpdateSmsSettings?: (settings: SmsGatewaySettings) => void;
+  onOpenSmsCenter?: () => void;
   onDeletePendingChallan?: (invoiceNo: number) => void;
   onDeleteDeliveryChallan?: (challanId: number) => void;
   onDataChanged: () => void;
@@ -62,11 +68,15 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
   onUpdateNotice,
   contactsInfo: propContacts,
   onUpdateContacts,
+  shop,
+  smsSettings,
+  onUpdateSmsSettings,
+  onOpenSmsCenter,
   onDeletePendingChallan,
   onDeleteDeliveryChallan,
   onDataChanged,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'notice' | 'contacts' | 'data_control'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'deals' | 'permissions' | 'sms_api' | 'notice' | 'contacts' | 'data_control'>('users');
 
   // Users State (always synchronized with live Firestore updates)
   const [users, setUsers] = useState<AppUser[]>(() => (propUsers && propUsers.length > 0 ? propUsers : StorageService.getUsers()));
@@ -682,6 +692,7 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
     { key: 'customers', label: 'গ্রাহক তালিকা (Customers)', count: customers.length, desc: 'সকল কাস্টমার প্রোফাইল' },
     { key: 'products', label: 'পণ্য ও স্টক (Products)', count: (propProducts || StorageService.getProducts()).length, desc: 'সকল পণ্য ক্যাটালগ ও স্টক' },
     { key: 'dealers', label: 'ডিলার মাস্টার (Dealers)', count: dealers.length, desc: 'সংরক্ষিত ডিল ও রেফারেন্স তালিকা' },
+    { key: 'smsLogs', label: 'SMS ইতিহাস ও রিপোর্ট (SMS Logs)', count: StorageService.getSmsLogs().length, desc: 'পাঠানো SMS লগ, ডেলিভারি রিপোর্ট ও খরচ' },
   ];
 
   return (
@@ -746,6 +757,26 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
         >
           <Lock className="w-3.5 h-3.5" />
           ভূমিকা ও অনুমতি
+        </button>
+        <button
+          onClick={() => setActiveSubTab('sms_api')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded font-bold cursor-pointer transition whitespace-nowrap shrink-0 ${
+            activeSubTab === 'sms_api'
+              ? 'bg-sky-600 text-white shadow-xs'
+              : 'text-slate-300 hover:bg-slate-700'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          SMS ও API কন্ট্রোল
+          <span
+            className={`px-1.5 py-0.2 rounded text-[9px] font-mono uppercase ${
+              (smsSettings?.smsEnabled ?? StorageService.getSmsSettings().smsEnabled)
+                ? 'bg-emerald-500 text-white'
+                : 'bg-rose-600 text-white'
+            }`}
+          >
+            {(smsSettings?.smsEnabled ?? StorageService.getSmsSettings().smsEnabled) ? 'ON' : 'OFF'}
+          </span>
         </button>
         <button
           onClick={() => setActiveSubTab('notice')}
@@ -1521,6 +1552,34 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
                       className="w-4 h-4 mt-0.5 accent-rose-600 cursor-pointer"
                     />
                   </label>
+
+                  {/* canSendSms */}
+                  <label className="flex items-start justify-between gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition">
+                    <div>
+                      <div className="font-bold text-sky-800">SMS পাঠানো ও হিস্ট্রি দেখা (Send SMS)</div>
+                      <div className="text-[11px] text-slate-500">ইনভয়েস, জমা ও বকেয়া SMS পাঠানো ও SMS Center দেখা</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={staffPerms.canSendSms !== false}
+                      onChange={() => handleTogglePerm('canSendSms')}
+                      className="w-4 h-4 mt-0.5 accent-sky-600 cursor-pointer"
+                    />
+                  </label>
+
+                  {/* canManageSmsSettings */}
+                  <label className="flex items-start justify-between gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition">
+                    <div>
+                      <div className="font-bold text-slate-800">SMS গেটওয়ে সেটিংস ও ব্যালেন্স</div>
+                      <div className="text-[11px] text-slate-500">SMS প্রোভাইডার ও গেটওয়ে কনফিগারেশন পরিবর্তন করা</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={staffPerms.canManageSmsSettings === true}
+                      onChange={() => handleTogglePerm('canManageSmsSettings')}
+                      className="w-4 h-4 mt-0.5 accent-emerald-600 cursor-pointer"
+                    />
+                  </label>
                 </div>
               </div>
             </div>
@@ -1540,6 +1599,18 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
               </button>
             </div>
           </div>
+        )}
+
+        {/* ================= 3.5 SMS & API CONTROL SUBTAB ================= */}
+        {activeSubTab === 'sms_api' && (
+          <AdminSmsApiPanel
+            currentUser={currentUser}
+            shop={shop}
+            smsSettings={smsSettings}
+            onUpdateSmsSettings={onUpdateSmsSettings}
+            onSmsLogsUpdated={onDataChanged}
+            onOpenSmsCenter={onOpenSmsCenter}
+          />
         )}
 
         {/* ================= 4. GLOBAL SCROLLING NOTICE LINE SUBTAB ================= */}

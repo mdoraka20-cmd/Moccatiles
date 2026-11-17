@@ -22,6 +22,7 @@ import {
   Menu,
   X,
   Megaphone,
+  MessageSquare,
 } from 'lucide-react';
 
 interface HeaderToolbarProps {
@@ -71,6 +72,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
     { id: 'due_list', label: 'Due List', bangla: 'বাকির তালিকা', icon: AlertCircle },
     { id: 'income_expend', label: 'Income Expend', bangla: 'আয়-ব্যয়', icon: TrendingUp, permissionKey: 'canManageExpenses' },
     { id: 'sales_report', label: 'Sales Report', bangla: 'রিপোর্ট ইঞ্জিন', icon: BarChart3, permissionKey: 'canViewReports' },
+    { id: 'sms_center', label: 'SMS Center', bangla: 'এসএমএস ও রিপোর্ট', icon: MessageSquare, highlight: true, permissionKey: 'canSendSms' },
     { id: 'admin_control', label: 'Admin Control', bangla: 'এডমিন ও স্টাফ পারমিশন', icon: ShieldCheck, highlight: true, adminOnly: true },
     { id: 'settings', label: 'Settings', bangla: 'দোকান সেটিং', icon: Settings, permissionKey: 'canAccessSettings' },
     { id: 'data_backup', label: 'Data Folder', bangla: 'ব্যাকআপ/ডাটা', icon: Database, permissionKey: 'canBackupData' },

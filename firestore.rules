@@ -73,10 +73,16 @@ service cloud.firestore {
       allow get, create, update, delete: if isValidId(challanId);
     }
 
-    // Metadata (Categories, Vendors, Staff Permissions)
+    // Metadata (Categories, Vendors, Staff Permissions, SMS Settings)
     match /metadata/{metaId} {
       allow list: if true;
       allow get, create, update, delete: if isValidId(metaId);
+    }
+
+    // SMS Logs & Delivery Reports
+    match /smsLogs/{logId} {
+      allow list: if true;
+      allow get, create, update, delete: if isValidId(logId);
     }
 
     // Connection testing
