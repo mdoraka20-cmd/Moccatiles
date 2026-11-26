@@ -36,9 +36,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ shop, users: propUsers, on
     setIsLoading(true);
 
     const trimmedUser = username.trim().toLowerCase();
+    const trimmedPass = password.trim();
     const latestUsers = propUsers && propUsers.length > 0 ? propUsers : StorageService.getUsers();
     const foundUser = latestUsers.find(
-      (u) => u.username.toLowerCase() === trimmedUser && u.password === password
+      (u) =>
+        u.username.trim().toLowerCase() === trimmedUser &&
+        (u.password === password || u.password.trim() === trimmedPass)
     );
 
     setTimeout(() => {

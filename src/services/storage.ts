@@ -1459,7 +1459,7 @@ export class StorageService {
     if (wipeAll || targets.includes('smsLogs')) this.saveSmsLogs([]);
   }
 
-  // Reset to default sample data
+  // Reset to default sample data (preserves existing user accounts & login passwords)
   static resetToDefaults() {
     this.saveShop(defaultShopConfig);
     this.saveProducts(initialProducts);
@@ -1468,8 +1468,9 @@ export class StorageService {
     this.savePayments(initialPayments);
     this.saveTxns(initialTxns);
     this.saveDealers(initialDealers);
-    this.saveUsers(initialUsers);
-    this.setCurrentUser(initialUsers[0]);
+    if (this.getUsers().length === 0) {
+      this.saveUsers(initialUsers);
+    }
     this.saveStockInRecords(initialStockIns);
     this.saveDeliveryChallans(initialDeliveries);
   }

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Customer, Invoice, Payment, Product, ShopConfig, Txn } from '../types';
+import { AppUser, Customer, Invoice, Payment, Product, ShopConfig, Txn } from '../types';
 import { StorageService } from '../services/storage';
 import { FirestoreSyncService } from '../services/firestoreSync';
-import { Database, Download, Upload, RefreshCw, AlertTriangle, Check, FileCode } from 'lucide-react';
+import { Database, Download, Upload, RefreshCw, AlertTriangle, Check, X } from 'lucide-react';
 import { getTodayLocalDateStr } from '../utils/numberWords';
 
 interface DataBackupViewProps {
@@ -12,6 +12,8 @@ interface DataBackupViewProps {
   payments: Payment[];
   txns: Txn[];
   shop: ShopConfig;
+  currentUser: AppUser;
+  onRequireAdminAuth: (actionTitle: string, onExecute: () => void, actionDetails?: string) => void;
   onDataReload: () => void;
 }
 
@@ -22,9 +24,13 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
   payments,
   txns,
   shop,
+  currentUser,
+  onRequireAdminAuth,
   onDataReload,
 }) => {
   const [msg, setMsg] = useState('');
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
 
   // JSON export
   const handleExportJSON = () => {
@@ -136,39 +142,63 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
     document.body.removeChild(link);
   };
 
-  // JSON import (syncs to both local storage and Firestore cloud)
+  // JSON import (requires Admin authorization before overwriting Cloud Firestore)
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        try {
-          const success = await FirestoreSyncService.syncFullRestoreFromJSON(reader.result as string);
-          if (success) {
-            onDataReload();
-            setMsg('ডাটা রিস্টোর ও ক্লাউড সিঙ্ক সম্পন্ন হয়েছে!');
-            setTimeout(() => setMsg(''), 4000);
-          } else {
-            setMsg('❌ ভুল ফাইল ফরম্যাট। সঠিক JSON ফাইল প্রদান করুন।');
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const jsonContent = reader.result as string;
+      onRequireAdminAuth(
+        'ব্যাকআপ JSON থেকে ডাটা রিস্টোর',
+        async () => {
+          setIsBusy(true);
+          try {
+            const success = await FirestoreSyncService.syncFullRestoreFromJSON(jsonContent);
+            if (success) {
+              onDataReload();
+              setMsg('ডাটা রিস্টোর ও ক্লাউড সিঙ্ক সম্পন্ন হয়েছে!');
+            } else {
+              setMsg('❌ ভুল ফাইল ফরম্যাট। সঠিক JSON ফাইল প্রদান করুন।');
+            }
+          } catch {
+            setMsg('❌ ফাইল পড়তে সমস্যা হয়েছে।');
+          } finally {
+            setIsBusy(false);
             setTimeout(() => setMsg(''), 4000);
           }
-        } catch {
-          setMsg('❌ ফাইল পড়তে সমস্যা হয়েছে।');
-          setTimeout(() => setMsg(''), 4000);
-        }
-      };
-      reader.readAsText(file);
+        },
+        `ফাইল "${file.name}" থেকে ক্লাউড ডাটাবেস রিস্টোর করা হবে। বর্তমান ডাটা প্রতিস্থাপিত হবে।`
+      );
+    };
+    reader.readAsText(file);
+  };
+
+  const executeResetToSample = async () => {
+    setIsBusy(true);
+    try {
+      StorageService.resetToDefaults();
+      const jsonStr = StorageService.exportAllAsJSON();
+      await FirestoreSyncService.syncFullRestoreFromJSON(jsonStr);
+      onDataReload();
+      setIsResetModalOpen(false);
+      setMsg('ডিফল্ট নমুনা ডাটা সফলভাবে সেট এবং ক্লাউড সিঙ্ক করা হয়েছে (ইউজার একাউন্ট অক্ষুণ্ণ রয়েছে)।');
+    } catch {
+      setMsg('❌ ডাটা রিসেট করতে সমস্যা হয়েছে।');
+    } finally {
+      setIsBusy(false);
+      setTimeout(() => setMsg(''), 5000);
     }
   };
 
-  const handleResetToSample = async () => {
-    StorageService.resetToDefaults();
-    const jsonStr = StorageService.exportAllAsJSON();
-    await FirestoreSyncService.syncFullRestoreFromJSON(jsonStr);
-    onDataReload();
-    setMsg('ডিফল্ট নমুনা ডাটা সফলভাবে সেট এবং ক্লাউড সিঙ্ক করা হয়েছে!');
-    setTimeout(() => setMsg(''), 4000);
+  const handleRequestResetToSample = () => {
+    onRequireAdminAuth(
+      'নমুনা ডেমো ডাটা রিসেট (Demo Data Reset)',
+      () => setIsResetModalOpen(true),
+      'সতর্কতা: এটি পুরো ব্যবসার চালান, ক্রেতা ও পণ্য ডেমো ডাটায় রিসেট করবে।'
+    );
   };
 
   return (
@@ -191,13 +221,13 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
         {/* Info card */}
         <div className="bg-slate-50 border border-slate-200 rounded p-3 text-slate-600 leading-relaxed">
           <p className="font-semibold text-slate-800 mb-1">
-            লোকাল ডাটা স্টোরেজ ও ফাইল ব্যাকআপ সংক্রান্ত তথ্য:
+            ক্লাউড ও লোকাল ডাটা স্টোরেজ সংক্রান্ত তথ্য:
           </p>
           <p>
-            আসল C# / VB.NET অ্যাপে ডাটা সংরক্ষিত থাকে <code className="font-mono text-emerald-800 font-bold">D:\TilesBillingData</code> অথবা <code className="font-mono text-emerald-800 font-bold">C:\TilesBillingData</code> ফোল্ডারে TSV আকারে। এই ওয়েব সংস্করণে সব ডাটা ব্রাউজারের লোকাল স্টোরেজে নিরাপদে সংরক্ষিত থাকে।
+            আপনার সকল বিল, গ্রাহক, পণ্য ও হিসাব রিয়েল-টাইম ক্লাউড ডাটাবেস (Firestore) এবং ব্রাউজারের লোকাল স্টোরেজে সংরক্ষিত থাকে।
           </p>
           <p className="mt-1">
-            যেকোনো সময় ১-ক্লিকে সম্পূর্ণ ব্যাকআপ নিতে পারেন অথবা আসল অ্যাপের মতো পৃথক <code className="font-mono text-slate-700 font-bold">.tsv</code> ফাইল হিসেবে এক্সপোর্ট করতে পারবেন।
+            নিয়মিত সম্পূর্ণ JSON ব্যাকআপ ডাউনলোড করে রাখুন — যেকোনো সময় ১টি JSON ফাইল থেকেই পুরো ব্যবসার ডাটা ফিরিয়ে আনা যাবে।
           </p>
         </div>
 
@@ -207,7 +237,8 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={handleExportJSON}
-              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
+              disabled={isBusy}
+              className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5"
             >
               <Download className="w-4 h-4" />
               ব্যাকআপ ডাউনলোড (Download Backup JSON)
@@ -215,8 +246,8 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
 
             <label className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded font-bold cursor-pointer transition shadow-xs flex items-center gap-1.5">
               <Upload className="w-4 h-4" />
-              ব্যাকআপ ফাইল থেকে রিস্টোর (Restore from JSON)
-              <input type="file" accept=".json" onChange={handleImportJSON} className="hidden" />
+              {isBusy ? 'প্রসেস হচ্ছে...' : 'ব্যাকআপ ফাইল থেকে রিস্টোর (Restore from JSON)'}
+              <input type="file" accept=".json" disabled={isBusy} onChange={handleImportJSON} className="hidden" />
             </label>
           </div>
         </div>
@@ -276,23 +307,76 @@ export const DataBackupView: React.FC<DataBackupViewProps> = ({
           </div>
         </div>
 
-        {/* Section 3: Reset / Seed demo */}
-        <div className="border border-amber-200 rounded-lg p-4 bg-amber-50/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <h4 className="font-bold text-amber-950 text-xs">নমুনা ডেমো ডাটা রিসেট (Sample Demo Data)</h4>
-            <p className="text-[11px] text-amber-800 mt-0.5">
-              শুরুর ডিফল্ট প্রোডাক্ট, কাস্টমার এবং বিলিং তথ্যে ফিরে যেতে চাইলে রিসেট চাপুন।
-            </p>
+        {/* Section 3: Reset / Seed demo (Admin Only + Protected Confirmation) */}
+        {currentUser.role === 'admin' && (
+          <div className="border border-rose-200 rounded-lg p-4 bg-rose-50/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h4 className="font-bold text-rose-950 text-xs flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                নমুনা ডেমো ডাটা রিসেট (Admin Only - Sample Demo Data)
+              </h4>
+              <p className="text-[11px] text-rose-800 mt-0.5">
+                সতর্কতা: রিসেট করলে ক্লাউডের সকল বর্তমান ইনভয়েস, ক্রেতা ও পণ্যের ডাটা মুছে শুরুর ডেমো ডাটা বসবে (শুধু ইউজার লগিন থাকবে)।
+              </p>
+            </div>
+            <button
+              onClick={handleRequestResetToSample}
+              disabled={isBusy}
+              className="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white rounded font-semibold transition cursor-pointer flex items-center gap-1 text-xs shadow-xs shrink-0"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              ডেমো ডাটা রিসেট
+            </button>
           </div>
-          <button
-            onClick={handleResetToSample}
-            className="px-3 py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded font-semibold transition cursor-pointer flex items-center gap-1 text-xs shadow-xs"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            রিসেট করুন
-          </button>
-        </div>
+        )}
       </div>
+
+      {/* Explicit Confirmation Modal for Sample Demo Reset */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border-2 border-rose-500 overflow-hidden text-xs">
+            <div className="bg-rose-700 text-white px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <AlertTriangle className="w-4 h-4 text-amber-200" />
+                <span>সতর্কতা: ডেমো ডাটা রিসেট নিশ্চিত করুন</span>
+              </div>
+              <button
+                onClick={() => setIsResetModalOpen(false)}
+                className="p-1 hover:bg-rose-600 rounded text-rose-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-slate-800 leading-relaxed font-medium">
+                আপনি কি নিশ্চিতভাবে সকল বর্তমান ইনভয়েস, ক্রেতা, পেমেন্ট, পণ্য ও দোকানের তথ্য মুছে শুরুর নমুনা ডেমো ডাটায় ফিরে যেতে চান?
+              </p>
+              <div className="p-2.5 bg-amber-50 border border-amber-300 rounded text-amber-900 text-[11px]">
+                এটি ক্লাউড ডাটাবেস থেকেও সকল বর্তমান রেকর্ড মুছে ফেলবে। তবে আপনার এডমিন ও স্টাফ ইউজার একাউন্ট অক্ষুণ্ণ থাকবে। আগে JSON ব্যাকআপ ডাউনলোড করে নেওয়ার পরামর্শ দেওয়া হলো।
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setIsResetModalOpen(false)}
+                  disabled={isBusy}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded cursor-pointer"
+                >
+                  বাতিল করুন
+                </button>
+                <button
+                  type="button"
+                  onClick={executeResetToSample}
+                  disabled={isBusy}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white font-bold rounded cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? 'animate-spin' : ''}`} />
+                  {isBusy ? 'রিসেট হচ্ছে...' : 'হ্যাঁ, রিসেট করুন'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

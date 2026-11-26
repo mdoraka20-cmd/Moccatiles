@@ -665,6 +665,8 @@ export default function App() {
             payments={payments}
             txns={txns}
             shop={shop}
+            currentUser={currentUser}
+            onRequireAdminAuth={requestAdminAction}
             onDataReload={refreshAllData}
           />
         )}
