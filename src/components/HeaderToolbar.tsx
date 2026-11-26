@@ -75,7 +75,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
     { id: 'sms_center', label: 'SMS Center', bangla: 'এসএমএস ও রিপোর্ট', icon: MessageSquare, highlight: true, permissionKey: 'canSendSms' },
     { id: 'admin_control', label: 'Admin Control', bangla: 'এডমিন ও স্টাফ পারমিশন', icon: ShieldCheck, highlight: true, adminOnly: true },
     { id: 'settings', label: 'Settings', bangla: 'দোকান সেটিং', icon: Settings, permissionKey: 'canAccessSettings' },
-    { id: 'data_backup', label: 'Data Folder', bangla: 'ব্যাকআপ/ডাটা', icon: Database, permissionKey: 'canBackupData' },
+    { id: 'data_backup', label: 'Data Folder', bangla: 'ব্যাকআপ/ডাটা', icon: Database, adminOnly: true },
   ];
 
   // Filter based on role and admin-controlled permissions

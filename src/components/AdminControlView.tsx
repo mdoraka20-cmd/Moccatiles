@@ -1539,20 +1539,6 @@ export const AdminControlView: React.FC<AdminControlViewProps> = ({
                     />
                   </label>
 
-                  {/* canBackupData */}
-                  <label className="flex items-start justify-between gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition">
-                    <div>
-                      <div className="font-bold text-rose-700">ডাটা ব্যাকআপ ও রিসেট</div>
-                      <div className="text-[11px] text-slate-500">ডাটা ফোল্ডার ব্যাকআপ ও ডাটাবেস রিসেট কন্ট্রোল</div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={staffPerms.canBackupData}
-                      onChange={() => handleTogglePerm('canBackupData')}
-                      className="w-4 h-4 mt-0.5 accent-rose-600 cursor-pointer"
-                    />
-                  </label>
-
                   {/* canSendSms */}
                   <label className="flex items-start justify-between gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200 transition">
                     <div>

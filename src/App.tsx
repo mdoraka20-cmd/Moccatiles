@@ -400,7 +400,7 @@ export default function App() {
   // Handle Tab Navigation with strict Role & Staff Permission checks
   const handleTabChange = (tab: ActiveTab) => {
     if (currentUser.role !== 'admin') {
-      if (tab === 'admin_control') {
+      if (tab === 'admin_control' || tab === 'data_backup') {
         setActiveTab('dashboard');
         return;
       }
@@ -412,7 +412,6 @@ export default function App() {
       if (tab === 'sales_report' && staffPermissions.canViewReports === false) return;
       if (tab === 'sms_center' && staffPermissions.canSendSms === false) return;
       if (tab === 'settings' && staffPermissions.canAccessSettings === false) return;
-      if (tab === 'data_backup' && staffPermissions.canBackupData === false) return;
     }
     setActiveTab(tab);
   };
@@ -446,7 +445,7 @@ export default function App() {
             contactsInfo={contactsInfo}
             currentUser={currentUser}
             onOpenLoginModal={() => setIsLoginModalOpen(true)}
-            onNavigate={(tab) => setActiveTab(tab)}
+            onNavigate={(tab) => handleTabChange(tab)}
             onPrintInvoice={(inv, isChallan) => {
               setPrintModal({
                 isOpen: true,
@@ -657,7 +656,7 @@ export default function App() {
           <SettingsView shop={shop} onSaveShop={handleSaveShop} />
         )}
 
-        {activeTab === 'data_backup' && (
+        {activeTab === 'data_backup' && currentUser.role === 'admin' && (
           <DataBackupView
             products={products}
             customers={customers}
@@ -719,6 +718,7 @@ export default function App() {
             if (u.role !== 'admin') {
               if (
                 activeTab === 'admin_control' ||
+                activeTab === 'data_backup' ||
                 (activeTab === 'stock_inventory' && latestPerms.canAccessStock === false) ||
                 (activeTab === 'customer' && latestPerms.canManageCustomers === false) ||
                 (activeTab === 'products' && latestPerms.canManageProducts === false) ||
@@ -726,8 +726,7 @@ export default function App() {
                 (activeTab === 'income_expend' && latestPerms.canManageExpenses === false) ||
                 (activeTab === 'sales_report' && latestPerms.canViewReports === false) ||
                 (activeTab === 'sms_center' && latestPerms.canSendSms === false) ||
-                (activeTab === 'settings' && latestPerms.canAccessSettings === false) ||
-                (activeTab === 'data_backup' && latestPerms.canBackupData === false)
+                (activeTab === 'settings' && latestPerms.canAccessSettings === false)
               ) {
                 setActiveTab('dashboard');
               }

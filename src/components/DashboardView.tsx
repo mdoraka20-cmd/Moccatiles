@@ -411,12 +411,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <span className="font-medium">
           ক্লাউড সিঙ্ক ও লোকাল স্টোরেজ সক্রিয়
         </span>
-        <button
-          onClick={() => onNavigate('data_backup')}
-          className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold underline cursor-pointer"
-        >
-          ব্যাকআপ / রিস্টোর করুন
-        </button>
+        {currentUser?.role === 'admin' && (
+          <button
+            onClick={() => onNavigate('data_backup')}
+            className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold underline cursor-pointer"
+          >
+            ব্যাকআপ / রিস্টোর করুন
+          </button>
+        )}
       </div>
 
       {/* Contacts & Service Validity Modal (Visible to all users) */}
